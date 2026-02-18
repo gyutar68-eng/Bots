@@ -46,8 +46,9 @@ PRODUCTS = {
     }
 }
 
-# Временное хранилище корзин
+# Временное хранилище корзин и заказов
 carts = {}
+orders = {}  # История заказов
 
 # ============================================
 # ФУНКЦИЯ ПРОВЕРКИ ПОДПИСКИ
@@ -209,7 +210,9 @@ async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [InlineKeyboardButton("🛍 Каталог товаров", callback_data="catalog")],
         [InlineKeyboardButton("🛒 Моя корзина", callback_data="cart")],
-        [InlineKeyboardButton("ℹ️ О нас", callback_data="about")]
+        [InlineKeyboardButton("📦 Мои заказы", callback_data="orders")],
+        [InlineKeyboardButton("ℹ️ О нас", callback_data="about")],
+        [InlineKeyboardButton("📞 Контакты", callback_data="contacts")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
@@ -363,6 +366,18 @@ async def checkout(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     total = sum(item['price'] for item in user_cart)
     
+    # Сохраняем заказ в историю
+    if user_id not in orders:
+        orders[user_id] = []
+    
+    order_number = len(orders[user_id]) + 1
+    orders[user_id].append({
+        "order_id": order_number,
+        "items": user_cart.copy(),
+        "total": total,
+        "status": "Оплачен"
+    })
+    
     keyboard = [
         [InlineKeyboardButton("💳 Оплатить", callback_data="pay")],
         [InlineKeyboardButton("◀️ Назад в корзину", callback_data="cart")]
@@ -391,6 +406,11 @@ async def pay(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("❌ Корзина пуста")
         return
     
+    # Обновляем статус последнего заказа
+    if user_id in orders and orders[user_id]:
+        orders[user_id][-1]["status"] = "Оплачен"
+    
+    # Очищаем корзину после оплаты
     carts[user_id] = []
     
     await query.edit_message_text(
@@ -401,6 +421,31 @@ async def pay(update: Update, context: ContextTypes.DEFAULT_TYPE):
             InlineKeyboardButton("📦 В каталог", callback_data="catalog")
         ]])
     )
+
+# ============================================
+# ИСТОРИЯ ЗАКАЗОВ
+# ============================================
+async def orders_history(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    user_id = query.from_user.id
+    user_orders = orders.get(user_id, [])
+    
+    if not user_orders:
+        text = "📦 У вас пока нет заказов"
+    else:
+        text = "📦 ИСТОРИЯ ЗАКАЗОВ:\n\n"
+        for order in user_orders[-5:]:  # Последние 5 заказов
+            text += f"Заказ #{order['order_id']} - {order['total']} ₽\n"
+            for item in order['items']:
+                text += f"  • Логи {item['quantity']} шт\n"
+            text += f"Статус: {order['status']}\n\n"
+    
+    keyboard = [[InlineKeyboardButton("◀️ Назад", callback_data="back_to_menu")]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await query.edit_message_text(text, reply_markup=reply_markup)
 
 # ============================================
 # О НАС
@@ -418,6 +463,24 @@ async def about(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Работаем 24/7\n"
         "Быстрая доставка\n"
         f"📦 В наличии: {PRODUCTS['logs']['stock']} шт",
+        reply_markup=reply_markup
+    )
+
+# ============================================
+# КОНТАКТЫ
+# ============================================
+async def contacts(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    keyboard = [[InlineKeyboardButton("◀️ Назад", callback_data="back_to_menu")]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await query.edit_message_text(
+        "📞 КОНТАКТЫ\n\n"
+        "Поддержка: @support\n"
+        f"Канал: {CHANNEL_URL}\n"
+        "Время работы: 24/7",
         reply_markup=reply_markup
     )
 
@@ -444,7 +507,9 @@ def main():
     app.add_handler(CallbackQueryHandler(catalog, pattern="catalog"))
     app.add_handler(CallbackQueryHandler(category_logs, pattern="category_logs"))
     app.add_handler(CallbackQueryHandler(cart, pattern="cart"))
+    app.add_handler(CallbackQueryHandler(orders_history, pattern="orders"))
     app.add_handler(CallbackQueryHandler(about, pattern="about"))
+    app.add_handler(CallbackQueryHandler(contacts, pattern="contacts"))
     app.add_handler(CallbackQueryHandler(checkout, pattern="checkout"))
     app.add_handler(CallbackQueryHandler(pay, pattern="pay"))
     app.add_handler(CallbackQueryHandler(buy_logs, pattern="^buy_logs_[0-9]+$"))

@@ -426,6 +426,7 @@ async def catalog(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "• 3 шт - 4500 ₽\n"
         "• 5 шт - 7500 ₽\n"
         "• 10 шт - 15000 ₽\n\n"
+        "После оплаты вы получите PDF файл с 200 записями.",
         reply_markup=reply_markup
     )
 
@@ -437,7 +438,7 @@ async def buy_logs(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     
     quantity = int(query.data.split("_")[2])
-    price = 1500 * quantity  # Цена за количество
+    price = 1500 * quantity
     
     user_id = query.from_user.id
     if user_id not in carts:
@@ -469,7 +470,6 @@ async def buy_logs(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # КОРЗИНА (С УДАЛЕНИЕМ)
 # ============================================
 async def show_cart_with_delete(update: Update, context: ContextTypes.DEFAULT_TYPE, user_id):
-    """Показывает корзину с кнопками удаления"""
     user_cart = carts.get(user_id, [])
     
     if not user_cart:
@@ -536,7 +536,6 @@ async def remove_from_cart(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ФУНКЦИЯ СОЗДАНИЯ PDF С ЛОГАМИ
 # ============================================
 async def generate_logs_pdf(user_id, order_id, quantity):
-    """Генерирует PDF файл с 200 записями"""
     os.makedirs("products", exist_ok=True)
     
     filename = f"products/logs_{order_id}_{user_id}.pdf"
@@ -548,7 +547,6 @@ async def generate_logs_pdf(user_id, order_id, quantity):
     c = canvas.Canvas(filename, pagesize=A4)
     width, height = A4
     
-    # Заголовок
     c.setFont("Helvetica-Bold", 16)
     c.drawString(30 * mm, height - 20 * mm, f"ЛОГИ - Заказ #{order_id}")
     
@@ -558,7 +556,6 @@ async def generate_logs_pdf(user_id, order_id, quantity):
     c.drawString(30 * mm, height - 40 * mm, f"Количество: {quantity} шт")
     c.drawString(30 * mm, height - 45 * mm, f"Всего записей: 200")
     
-    # Логи (200 записей)
     lines = LOGS_DATA.strip().split('\n')
     
     y = height - 70 * mm
@@ -585,7 +582,6 @@ async def generate_logs_pdf(user_id, order_id, quantity):
             
             y -= line_height
             
-            # Новая страница если нужно
             if y < 20 * mm:
                 c.showPage()
                 y = height - 20 * mm
@@ -601,7 +597,6 @@ async def generate_logs_pdf(user_id, order_id, quantity):
 # УПРОЩЁННАЯ ФУНКЦИЯ СОЗДАНИЯ СЧЁТА
 # ============================================
 async def create_crypto_invoice(amount, description, user_id, context=None):
-    """Создаёт счёт в Crypto Bot"""
     if not CP_TOKEN:
         logger.error("❌ НЕТ CP_TOKEN!")
         return None
@@ -646,7 +641,6 @@ async def create_crypto_invoice(amount, description, user_id, context=None):
 # ФУНКЦИЯ ПРОВЕРКИ СТАТУСА ОПЛАТЫ
 # ============================================
 async def check_crypto_payment(invoice_id, user_id):
-    """Проверяет статус оплаты"""
     if not CP_TOKEN:
         return False
     
@@ -705,7 +699,6 @@ async def checkout(update: Update, context: ContextTypes.DEFAULT_TYPE):
     usdt_amount = await rub_to_usdt(total_rub)
     current_rate = await get_usdt_rate()
     
-    # Проверка минимальной суммы (0.1 USDT)
     if usdt_amount < 0.1:
         min_rub = int(0.1 * current_rate)
         await query.edit_message_text(
@@ -806,13 +799,9 @@ async def check_payment_callback(update: Update, context: ContextTypes.DEFAULT_T
             "date": datetime.now().isoformat()
         })
         
-        # Получаем количество из корзины (первый товар)
         quantity = payment_info["cart"][0]["quantity"] if payment_info["cart"] else 1
-        
-        # Генерируем PDF
         pdf_path = await generate_logs_pdf(user_id, order_id, quantity)
         
-        # Отправляем PDF
         from telegram import FSInputFile
         document = FSInputFile(pdf_path)
         await context.bot.send_document(
@@ -821,10 +810,8 @@ async def check_payment_callback(update: Update, context: ContextTypes.DEFAULT_T
             caption=f"✅ Заказ #{order_id}\n\nЛоги ({quantity} шт)\nФайл содержит 200 записей.\n\nПоддержка: @shoplogs24support"
         )
         
-        # Удаляем PDF
         os.remove(pdf_path)
         
-        # Очищаем корзину
         carts[user_id] = []
         context.user_data["pending_payments"].remove(payment_info)
         
@@ -902,43 +889,44 @@ async def contacts(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 # ============================================
-# MAIN
+# MAIN (ИСПРАВЛЕННАЯ)
 # ============================================
 def main():
-    app = Application.builder().token(TOKEN).build()
-    
-    # Команда /start
-    app.add_handler(CommandHandler("start", start))
-    
-    # Обработчики callback-запросов
-    app.add_handler(CallbackQueryHandler(check_subscription_callback, pattern="check_sub"))
-    app.add_handler(CallbackQueryHandler(back_to_faq, pattern="back_to_faq"))
-    app.add_handler(CallbackQueryHandler(faq_reminder_handler, pattern="faq_reminder"))
-    app.add_handler(CallbackQueryHandler(go_to_shop, pattern="go_to_shop"))
-    app.add_handler(CallbackQueryHandler(back_to_menu, pattern="back_to_menu"))
-    
-    # Обработчики разделов FAQ
-    app.add_handler(CallbackQueryHandler(faq_section_handler, pattern="^faq_[0-9]+$"))
-    
-    # Обработчики магазина
-    app.add_handler(CallbackQueryHandler(catalog, pattern="catalog"))
-    app.add_handler(CallbackQueryHandler(buy_logs, pattern="^buy_logs_[0-9]+$"))
-    app.add_handler(CallbackQueryHandler(cart, pattern="cart"))
-    app.add_handler(CallbackQueryHandler(remove_from_cart, pattern="^remove_[0-9]+$"))
-    app.add_handler(CallbackQueryHandler(orders_history, pattern="orders"))
-    app.add_handler(CallbackQueryHandler(about, pattern="about"))
-    app.add_handler(CallbackQueryHandler(contacts, pattern="contacts"))
-    app.add_handler(CallbackQueryHandler(checkout, pattern="checkout"))
-    app.add_handler(CallbackQueryHandler(check_payment_callback, pattern="^check_[0-9]+$"))
-    
-    logger.info("🚀 Бот запущен...")
-    app.run_polling()
-
-async def back_to_faq(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await show_faq(update, context)
-
-async def back_to_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await show_main_menu(update, context)
+    """Запуск бота"""
+    try:
+        app = Application.builder().token(TOKEN).build()
+        
+        # Команда /start
+        app.add_handler(CommandHandler("start", start))
+        
+        # Обработчики callback-запросов
+        app.add_handler(CallbackQueryHandler(check_subscription_callback, pattern="check_sub"))
+        app.add_handler(CallbackQueryHandler(back_to_faq, pattern="back_to_faq"))
+        app.add_handler(CallbackQueryHandler(faq_reminder_handler, pattern="faq_reminder"))
+        app.add_handler(CallbackQueryHandler(go_to_shop, pattern="go_to_shop"))
+        app.add_handler(CallbackQueryHandler(back_to_menu, pattern="back_to_menu"))
+        
+        # Обработчики разделов FAQ
+        app.add_handler(CallbackQueryHandler(faq_section_handler, pattern="^faq_[0-9]+$"))
+        
+        # Обработчики магазина
+        app.add_handler(CallbackQueryHandler(catalog, pattern="catalog"))
+        app.add_handler(CallbackQueryHandler(buy_logs, pattern="^buy_logs_[0-9]+$"))
+        app.add_handler(CallbackQueryHandler(cart, pattern="cart"))
+        app.add_handler(CallbackQueryHandler(remove_from_cart, pattern="^remove_[0-9]+$"))
+        app.add_handler(CallbackQueryHandler(orders_history, pattern="orders"))
+        app.add_handler(CallbackQueryHandler(about, pattern="about"))
+        app.add_handler(CallbackQueryHandler(contacts, pattern="contacts"))
+        app.add_handler(CallbackQueryHandler(checkout, pattern="checkout"))
+        app.add_handler(CallbackQueryHandler(check_payment_callback, pattern="^check_[0-9]+$"))
+        
+        logger.info("🚀 Бот запускается...")
+        
+        # Важно! drop_pending_updates=True убирает старые обновления
+        app.run_polling(drop_pending_updates=True)
+        
+    except Exception as e:
+        logger.error(f"❌ Критическая ошибка: {e}")
 
 if __name__ == "__main__":
     main()

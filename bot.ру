@@ -481,13 +481,11 @@ async def remove_from_cart(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     
     user_id = query.from_user.id
-    item_index = int(query.data.split("_")[1])  # remove_1, remove_2 и т.д.
+    item_index = int(query.data.split("_")[1])
     
     if user_id in carts and 0 <= item_index < len(carts[user_id]):
         removed_item = carts[user_id].pop(item_index)
         logger.info(f"Пользователь {user_id} удалил {removed_item['product_name']} из корзины")
-        
-        # Показываем обновлённую корзину
         await show_cart_with_delete(update, context, user_id)
     else:
         await query.edit_message_text(
@@ -521,7 +519,6 @@ async def create_crypto_invoice(amount, description, user_id, context=None):
     
     try:
         async with aiohttp.ClientSession() as session:
-            # Пробуем mainnet
             async with session.post(
                 "https://pay.crypt.bot/api/createInvoice",
                 headers=headers,
@@ -539,7 +536,6 @@ async def create_crypto_invoice(amount, description, user_id, context=None):
                     text = await resp.text()
                     logger.error(f"mainnet HTTP {resp.status}: {text}")
                     
-                    # Если не сработало - пробуем testnet
                     async with session.post(
                         "https://testnet-pay.crypt.bot/api/createInvoice",
                         headers=headers,
@@ -574,7 +570,6 @@ async def check_crypto_payment(invoice_id, user_id):
     
     try:
         async with aiohttp.ClientSession() as session:
-            # Пробуем mainnet
             async with session.get(
                 "https://pay.crypt.bot/api/getInvoices",
                 headers=headers,
@@ -588,7 +583,6 @@ async def check_crypto_payment(invoice_id, user_id):
                         if str(user_id) in invoice.get("description", ""):
                             return invoice.get("status") == "paid"
             
-            # Пробуем testnet
             async with session.get(
                 "https://testnet-pay.crypt.bot/api/getInvoices",
                 headers=headers,
@@ -610,7 +604,6 @@ async def check_crypto_payment(invoice_id, user_id):
 # ОФОРМЛЕНИЕ ЗАКАЗА
 # ============================================
 async def checkout(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Оформление заказа с криптооплатой"""
     query = update.callback_query
     await query.answer()
     
@@ -860,6 +853,89 @@ async def contacts(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 # ============================================
+# ULTIMATE TEST (НОВАЯ ФУНКЦИЯ)
+# ============================================
+async def ultimate_test(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Абсолютно последний тест для диагностики проблем с Bothost"""
+    import subprocess
+    import socket
+    import asyncio
+    
+    msg = await update.message.reply_text("🔍 Запускаю ultimate test...")
+    
+    results = []
+    
+    # 1. Проверяем интернет
+    try:
+        socket.gethostbyname("google.com")
+        results.append("✅ Интернет есть")
+    except:
+        results.append("❌ Нет интернета")
+    
+    # 2. Проверяем DNS
+    try:
+        ip = socket.gethostbyname("pay.crypt.bot")
+        results.append(f"✅ DNS: pay.crypt.bot = {ip}")
+    except:
+        results.append("❌ DNS не работает")
+    
+    # 3. Проверяем ping
+    try:
+        result = subprocess.run(
+            ["ping", "-c", "1", "pay.crypt.bot"],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        if result.returncode == 0:
+            results.append("✅ ping работает")
+        else:
+            results.append("❌ ping не работает")
+    except:
+        results.append("❌ ping ошибка")
+    
+    # 4. Проверяем HTTP с разными таймаутами
+    for timeout in [5, 10, 30]:
+        try:
+            async with aiohttp.ClientSession() as session:
+                start = datetime.now()
+                async with session.get("https://pay.crypt.bot", timeout=timeout) as resp:
+                    end = datetime.now()
+                    results.append(f"✅ HTTP за {timeout}с: статус {resp.status}, время: {(end-start).total_seconds():.1f}с")
+        except asyncio.TimeoutError:
+            results.append(f"❌ HTTP таймаут за {timeout}с")
+        except Exception as e:
+            results.append(f"❌ HTTP ошибка: {type(e).__name__}")
+    
+    # 5. Проверяем сам токен
+    cp_token = os.getenv("CP_TOKEN")
+    if cp_token:
+        results.append(f"✅ CP_TOKEN есть: {cp_token[:10]}...")
+        
+        headers = {"Crypto-Pay-API-Token": cp_token}
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(
+                    "https://pay.crypt.bot/api/getMe",
+                    headers=headers,
+                    timeout=10
+                ) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        if data.get("ok"):
+                            results.append("✅ API работает")
+                        else:
+                            results.append(f"❌ API ошибка: {data}")
+                    else:
+                        results.append(f"❌ API HTTP {resp.status}")
+        except Exception as e:
+            results.append(f"❌ API ошибка: {type(e).__name__}")
+    else:
+        results.append("❌ CP_TOKEN отсутствует")
+    
+    await msg.edit_text("\n".join(results))
+
+# ============================================
 # MAIN
 # ============================================
 def main():
@@ -867,6 +943,9 @@ def main():
     
     # Команда /start
     app.add_handler(CommandHandler("start", start))
+    
+    # Команда для диагностики (НОВАЯ)
+    app.add_handler(CommandHandler("test", ultimate_test))
     
     # Обработчики callback-запросов
     app.add_handler(CallbackQueryHandler(check_subscription_callback, pattern="check_sub"))

@@ -7,11 +7,6 @@ import uuid
 from datetime import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
-import csv
-from io import StringIO
-from reportlab.pdfgen import canvas
-from reportlab.lib.pagesizes import A4
-from reportlab.lib.units import mm
 
 # Настройка логирования
 logging.basicConfig(
@@ -221,10 +216,13 @@ FAQ_SECTIONS = [
 # ============================================
 PRODUCTS = {
     "logs": {
-        "name": "📦 Логи (200 записей)",
-        "stock": 999999,  # Бесконечно
+        "name": "📦 Логи",
+        "stock": 2250,
         "prices": {
-            1: 1500  # Одна единица товара = 200 записей
+            1: 1500,
+            3: 4500,
+            5: 7500,
+            10: 15000
         }
     }
 }
@@ -405,23 +403,30 @@ async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(text, reply_markup=reply_markup)
 
 # ============================================
-# КАТАЛОГ ТОВАРОВ
+# КАТАЛОГ ТОВАРОВ (С КНОПКАМИ 1,3,5,10)
 # ============================================
 async def catalog(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     
     keyboard = [
-        [InlineKeyboardButton(f"📦 Логи (200 записей) - 1500 ₽", callback_data="buy_logs_1")],
+        [InlineKeyboardButton("1 шт - 1500 ₽", callback_data="buy_logs_1")],
+        [InlineKeyboardButton("3 шт - 4500 ₽", callback_data="buy_logs_3")],
+        [InlineKeyboardButton("5 шт - 7500 ₽", callback_data="buy_logs_5")],
+        [InlineKeyboardButton("10 шт - 15000 ₽", callback_data="buy_logs_10")],
         [InlineKeyboardButton("◀️ Назад", callback_data="back_to_menu")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     await query.edit_message_text(
         "🛍 Каталог товаров\n\n"
-        "📦 Логи - 200 записей\n"
-        "💰 Цена: 1500 ₽\n\n"
-        "После оплаты вы получите PDF файл с данными.",
+        "📦 Логи (база данных)\n"
+        "Цены:\n"
+        "• 1 шт - 1500 ₽\n"
+        "• 3 шт - 4500 ₽\n"
+        "• 5 шт - 7500 ₽\n"
+        "• 10 шт - 15000 ₽\n\n"
+        "После оплаты вы получите PDF файл с 200 записями.",
         reply_markup=reply_markup
     )
 
@@ -432,18 +437,19 @@ async def buy_logs(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     
-    user_id = query.from_user.id
+    quantity = int(query.data.split("_")[2])
+    price = 1500 * quantity  # Цена за количество
     
-    # Добавляем товар в корзину (один товар = 200 записей)
+    user_id = query.from_user.id
     if user_id not in carts:
         carts[user_id] = []
     
     cart_item = {
         "category": "logs",
-        "product_name": PRODUCTS["logs"]["name"],
-        "quantity": 1,
-        "price": 1500,
-        "total": 1500
+        "product_name": f"📦 Логи ({quantity} шт)",
+        "quantity": quantity,
+        "price": price,
+        "total": price
     }
     carts[user_id].append(cart_item)
     
@@ -455,8 +461,8 @@ async def buy_logs(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await query.edit_message_text(
         f"✅ Товар добавлен в корзину!\n\n"
-        f"📦 Логи (200 записей)\n"
-        f"💰 Сумма: 1500 ₽",
+        f"📦 Логи ({quantity} шт)\n"
+        f"💰 Сумма: {price} ₽",
         reply_markup=reply_markup
     )
 
@@ -530,11 +536,15 @@ async def remove_from_cart(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ============================================
 # ФУНКЦИЯ СОЗДАНИЯ PDF С ЛОГАМИ
 # ============================================
-async def generate_logs_pdf(user_id, order_id):
-    """Генерирует PDF файл с логами"""
+async def generate_logs_pdf(user_id, order_id, quantity):
+    """Генерирует PDF файл с 200 записями"""
     os.makedirs("products", exist_ok=True)
     
     filename = f"products/logs_{order_id}_{user_id}.pdf"
+    
+    from reportlab.pdfgen import canvas
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.units import mm
     
     c = canvas.Canvas(filename, pagesize=A4)
     width, height = A4
@@ -546,31 +556,33 @@ async def generate_logs_pdf(user_id, order_id):
     c.setFont("Helvetica", 10)
     c.drawString(30 * mm, height - 30 * mm, f"Дата: {datetime.now().strftime('%d.%m.%Y %H:%M:%S')}")
     c.drawString(30 * mm, height - 35 * mm, f"Покупатель ID: {user_id}")
+    c.drawString(30 * mm, height - 40 * mm, f"Количество: {quantity} шт")
+    c.drawString(30 * mm, height - 45 * mm, f"Всего записей: 200")
     
-    # Разбираем логи
+    # Логи (200 записей)
     lines = LOGS_DATA.strip().split('\n')
     
-    y = height - 50 * mm
+    y = height - 70 * mm
     line_height = 5 * mm
     
     c.setFont("Helvetica-Bold", 10)
     c.drawString(10 * mm, y, "ФИО")
-    c.drawString(60 * mm, y, "Телефон")
-    c.drawString(110 * mm, y, "Дата рождения")
-    c.drawString(160 * mm, y, "ID")
+    c.drawString(70 * mm, y, "Телефон")
+    c.drawString(120 * mm, y, "Дата рождения")
+    c.drawString(170 * mm, y, "ID")
     
     y -= line_height * 2
     c.setFont("Helvetica", 8)
     
-    for i, line in enumerate(lines[:200]):  # Все 200 записей
+    for i, line in enumerate(lines[:200]):
         parts = line.split(',')
         if len(parts) == 4:
             name, phone, birth, uid = parts
             
             c.drawString(10 * mm, y, name[:30] + "..." if len(name) > 30 else name)
-            c.drawString(60 * mm, y, phone)
-            c.drawString(110 * mm, y, birth)
-            c.drawString(160 * mm, y, uid)
+            c.drawString(70 * mm, y, phone)
+            c.drawString(120 * mm, y, birth)
+            c.drawString(170 * mm, y, uid)
             
             y -= line_height
             
@@ -780,7 +792,7 @@ async def check_payment_callback(update: Update, context: ContextTypes.DEFAULT_T
     is_paid = await check_crypto_payment(invoice_id, user_id)
     
     if is_paid:
-        await query.edit_message_text("✅ Платёж подтверждён! Формируем PDF с логами...")
+        await query.edit_message_text("✅ Платёж подтверждён! Формируем PDF...")
         
         order_id = len(orders.get(user_id, [])) + 1
         if user_id not in orders:
@@ -791,13 +803,15 @@ async def check_payment_callback(update: Update, context: ContextTypes.DEFAULT_T
             "items": payment_info["cart"],
             "total_rub": payment_info["amount_rub"],
             "total_usdt": payment_info["amount_usdt"],
-            "rate": payment_info["rate"],
             "status": "Оплачен",
             "date": datetime.now().isoformat()
         })
         
+        # Получаем количество из корзины (первый товар)
+        quantity = payment_info["cart"][0]["quantity"] if payment_info["cart"] else 1
+        
         # Генерируем PDF
-        pdf_path = await generate_logs_pdf(user_id, order_id)
+        pdf_path = await generate_logs_pdf(user_id, order_id, quantity)
         
         # Отправляем PDF
         from telegram import FSInputFile
@@ -805,10 +819,10 @@ async def check_payment_callback(update: Update, context: ContextTypes.DEFAULT_T
         await context.bot.send_document(
             chat_id=user_id,
             document=document,
-            caption=f"✅ Ваш заказ #{order_id}\n\nЛоги (200 записей) в PDF формате.\n\nЕсли файл не открывается - обратитесь в поддержку @shoplogs24support"
+            caption=f"✅ Заказ #{order_id}\n\nЛоги ({quantity} шт)\nФайл содержит 200 записей.\n\nПоддержка: @shoplogs24support"
         )
         
-        # Удаляем PDF после отправки
+        # Удаляем PDF
         os.remove(pdf_path)
         
         # Очищаем корзину
@@ -817,7 +831,7 @@ async def check_payment_callback(update: Update, context: ContextTypes.DEFAULT_T
         
         await context.bot.send_message(
             chat_id=user_id,
-            text=f"✅ Заказ выполнен!\nФайл отправлен.",
+            text=f"✅ Заказ выполнен! PDF отправлен.",
             reply_markup=InlineKeyboardMarkup([[
                 InlineKeyboardButton("📦 В каталог", callback_data="catalog")
             ]])
@@ -864,7 +878,7 @@ async def about(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.edit_message_text(
         "ℹ️ О НАС\n\n"
         "✅ Лучший магазин логов в Telegram\n"
-        "✅ Более 200 записей\n"
+        "✅ База данных с 200+ записей\n"
         "✅ Мгновенная выдача PDF\n"
         "✅ Поддержка @shoplogs24support",
         reply_markup=reply_markup

@@ -7,7 +7,7 @@ import uuid
 import random
 from datetime import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes, FSInputFile
 
 # Настройка логирования
 logging.basicConfig(
@@ -379,15 +379,185 @@ async def rub_to_usdt(rub_amount):
     return round(rub_amount / rate, 2)
 
 # ============================================
-# РАЗДЕЛЫ FAQ
+# РАЗДЕЛЫ FAQ (РАСШИРЕННЫЕ)
 # ============================================
 FAQ_SECTIONS = [
-    {"id": 1, "name": "О сервисе", "content": "ℹ️ О СЕРВИСЕ\n\nМы - лучший магазин в Telegram."},
-    {"id": 2, "name": "Что такое логи", "content": "📊 ЛОГИ\n\nБаза данных с персональными данными."},
-    {"id": 3, "name": "Личные кабинеты", "content": "🏦 ЛИЧНЫЕ КАБИНЕТЫ\n\nДанные для входа в банки."},
-    {"id": 4, "name": "Гарантии", "content": "🛡 ГАРАНТИИ\n\nГарантируем возврат при проблемах."},
-    {"id": 5, "name": "Правила", "content": "🔒 ПРАВИЛА\n\nПоддержка @shoplogs24support"},
-    {"id": 6, "name": "Поддержка", "content": "📞 ПОДДЕРЖКА\n\n@shoplogs24support"}
+    {
+        "id": 1, 
+        "name": "📌 О сервисе", 
+        "content": """ℹ️ О СЕРВИСЕ
+
+Мы - профессиональный магазин цифровых товаров в Telegram. Работаем с 2024 года.
+
+🔹 Наша миссия: предоставлять качественные данные по доступным ценам
+🔹 Более 500 довольных клиентов
+🔹 24/7 поддержка
+🔹 Мгновенная автоматическая выдача товаров
+
+✅ Преимущества:
+• Все товары проходят проверку перед продажей
+• Гарантия возврата средств при проблемах
+• Анонимность и безопасность сделок
+• Удобная оплата через криптовалюту (USDT)
+
+По всем вопросам: @shoplogs24support"""
+    },
+    {
+        "id": 2, 
+        "name": "📊 Что такое логи", 
+        "content": """📊 ЧТО ТАКОЕ ЛОГИ
+
+Логи - это базы данных, содержащие персональную информацию реальных людей.
+
+🔹 Формат данных:
+• ФИО (полные)
+• Номера телефонов
+• Даты рождения
+• Уникальные идентификаторы
+
+🔹 Для чего используются:
+• Маркетинговые исследования
+• Анализ аудитории
+• Тестирование сервисов
+• Образовательные цели
+
+🔹 Наши гарантии:
+• Все данные уникальны
+• Регулярное обновление базы
+• Проверка на актуальность
+• 200+ записей в каждой базе
+
+⚠️ ВАЖНО: Используйте данные только в законных целях!"""
+    },
+    {
+        "id": 3, 
+        "name": "🏦 Личные кабинеты", 
+        "content": """🏦 ЛИЧНЫЕ КАБИНЕТЫ БАНКОВ
+
+Готовые доступы к личным кабинетам различных банков РФ.
+
+🔹 Доступные банки:
+• Сбербанк
+• Т-Банк (Тинькофф)
+• Альфа-Банк
+• ВТБ
+• Озон Банк
+• Райффайзенбанк
+• И многие другие (15+ банков)
+
+🔹 Что входит в комплект:
+• Логин
+• Пароль
+• Номер телефона
+• ФИО владельца
+• Дата рождения
+
+🔹 Преимущества:
+• Рабочие доступы
+• Разные регионы
+• Регулярное пополнение
+• Гарантия замены
+
+🔹 Цены:
+• 1 шт - 2000 ₽
+• 3 шт - 5000 ₽ (экономия 1000 ₽)
+• 5 шт - 8500 ₽ (экономия 1500 ₽)
+
+Поддержка: @shoplogs24support"""
+    },
+    {
+        "id": 4, 
+        "name": "🛡 Гарантии", 
+        "content": """🛡 ГАРАНТИИ И ВОЗВРАТ
+
+Мы дорожим своей репутацией и предоставляем полные гарантии на все товары.
+
+🔹 Наши обязательства:
+✅ 100% возврат средств при нерабочих данных
+✅ Замена товара в течение 24 часов
+✅ Проверка каждого товара перед продажей
+✅ Поддержка после покупки
+
+🔹 Условия возврата:
+• Товар не соответствует описанию
+• Данные не работают
+• Технические проблемы с файлом
+• Двойная оплата
+
+🔹 Процедура возврата:
+1. Напишите в поддержку @shoplogs24support
+2. Укажите номер заказа
+3. Опишите проблему
+4. Получите замену или возврат
+
+🔹 Сроки:
+• Рассмотрение: до 1 часа
+• Замена: моментально
+• Возврат: 24-48 часов
+
+Работаем честно и прозрачно!"""
+    },
+    {
+        "id": 5, 
+        "name": "🔒 Правила", 
+        "content": """🔒 ПРАВИЛА БЕЗОПАСНОСТИ
+
+Для вашей же безопасности просим соблюдать простые правила.
+
+⚠️ ЗАПРЕЩЕНО:
+❌ Передавать данные третьим лицам
+❌ Использовать в мошеннических целях
+❌ Пытаться взломать бота
+❌ Создавать несколько аккаунтов
+
+✅ РЕКОМЕНДУЕТСЯ:
+• Использовать отдельный пароль для покупок
+• Не хранить данные в открытом доступе
+• Сообщать о подозрительной активности
+• Делать резервные копии файлов
+
+🔐 БЕЗОПАСНОСТЬ:
+• Все транзакции защищены
+• Личные данные не хранятся
+• Анонимная оплата
+• Шифрование файлов
+
+📞 По любым вопросам: @shoplogs24support"""
+    },
+    {
+        "id": 6, 
+        "name": "📞 Поддержка", 
+        "content": """📞 СЛУЖБА ПОДДЕРЖКИ
+
+Мы всегда на связи и готовы помочь!
+
+🔹 КОНТАКТЫ:
+• Основной канал: {channel_url}
+• Поддержка: @shoplogs24support
+• Время работы: 24/7 (без выходных)
+
+🔹 ПО КАКИМ ВОПРОСАМ ОБРАЩАТЬСЯ:
+• Проблемы с оплатой
+• Ошибки при получении файлов
+• Замена товара
+• Возврат средств
+• Общие вопросы
+• Предложения по улучшению
+
+🔹 СРОКИ ОТВЕТА:
+• Обычный вопрос: 5-15 минут
+• Техническая проблема: до 1 часа
+• Возврат: 24 часа
+• Сложные случаи: до 48 часов
+
+🔹 КАК УСКОРИТЬ ОТВЕТ:
+• Укажите номер заказа
+• Опишите проблему подробно
+• Приложите скриншоты
+• Не дублируйте сообщения
+
+💬 Мы ценим каждого клиента!"""
+    }
 ]
 
 # ============================================
@@ -498,7 +668,7 @@ async def show_faq(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    text = f"📋 FAQ\n\n✔️ Прочитано: {read_count}/{total} разделов\n\nВыберите раздел:"
+    text = f"📋 FAQ - Обязательное ознакомление\n\n✔️ Прочитано: {read_count}/{total} разделов\n\nВыберите раздел для изучения:"
     
     if update.callback_query:
         await update.callback_query.edit_message_text(text, reply_markup=reply_markup)
@@ -520,9 +690,12 @@ async def faq_section_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
             context.user_data["faq_progress"] = {}
         context.user_data["faq_progress"][section_id] = True
         
-        keyboard = [[InlineKeyboardButton("◀️ Назад", callback_data="back_to_faq")]]
+        # Форматируем текст с подстановкой channel_url
+        content = section["content"].format(channel_url=CHANNEL_URL)
+        
+        keyboard = [[InlineKeyboardButton("◀️ Назад к FAQ", callback_data="back_to_faq")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
-        await query.edit_message_text(section["content"], reply_markup=reply_markup)
+        await query.edit_message_text(content, reply_markup=reply_markup)
 
 # ============================================
 # НАПОМИНАНИЕ
@@ -682,10 +855,10 @@ async def test_logs(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     
     keyboard = [
-        [InlineKeyboardButton("1 шт (тест)", callback_data="test_logs_1")],
-        [InlineKeyboardButton("3 шт (тест)", callback_data="test_logs_3")],
-        [InlineKeyboardButton("5 шт (тест)", callback_data="test_logs_5")],
-        [InlineKeyboardButton("10 шт (тест)", callback_data="test_logs_10")],
+        [InlineKeyboardButton("1 шт (тест)", callback_data="test_buy_logs_1")],
+        [InlineKeyboardButton("3 шт (тест)", callback_data="test_buy_logs_3")],
+        [InlineKeyboardButton("5 шт (тест)", callback_data="test_buy_logs_5")],
+        [InlineKeyboardButton("10 шт (тест)", callback_data="test_buy_logs_10")],
         [InlineKeyboardButton("◀️ Назад", callback_data="category_test")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -820,6 +993,10 @@ async def test_buy_logs(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     # Получаем количество из callback_data (test_buy_logs_1, test_buy_logs_3 и т.д.)
     parts = query.data.split("_")
+    if len(parts) < 4:
+        await query.edit_message_text("❌ Ошибка: неверный формат данных")
+        return
+    
     quantity = int(parts[3])  # test_buy_logs_1 -> 1
     user_id = query.from_user.id
     
@@ -836,6 +1013,14 @@ async def test_buy_logs(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Разбиваем данные на строки
         lines = LOGS_DATA.strip().split('\n')
         
+        # Проверяем что есть данные
+        if not lines:
+            await context.bot.send_message(
+                chat_id=user_id,
+                text=f"❌ Нет данных для генерации"
+            )
+            return
+        
         # Выбираем случайные строки
         if quantity >= len(lines):
             selected_lines = lines
@@ -851,9 +1036,8 @@ async def test_buy_logs(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await f.write(content)
         
         # Проверяем что файл создался
-        if os.path.exists(filename):
+        if os.path.exists(filename) and os.path.getsize(filename) > 0:
             # Отправляем файл
-            from telegram import FSInputFile
             document = FSInputFile(filename)
             await context.bot.send_document(
                 chat_id=user_id,
@@ -875,7 +1059,7 @@ async def test_buy_logs(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             await context.bot.send_message(
                 chat_id=user_id,
-                text=f"❌ Ошибка создания файла"
+                text=f"❌ Ошибка создания файла (файл пуст)"
             )
             
     except Exception as e:
@@ -895,6 +1079,10 @@ async def test_buy_banks(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     # Получаем количество из callback_data (test_buy_banks_1, test_buy_banks_3 и т.д.)
     parts = query.data.split("_")
+    if len(parts) < 4:
+        await query.edit_message_text("❌ Ошибка: неверный формат данных")
+        return
+    
     quantity = int(parts[3])  # test_buy_banks_1 -> 1
     user_id = query.from_user.id
     bank_name = context.user_data.get("test_bank", "Неизвестный банк")
@@ -935,9 +1123,8 @@ async def test_buy_banks(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await f.write(content)
         
         # Проверяем что файл создался
-        if os.path.exists(filename):
+        if os.path.exists(filename) and os.path.getsize(filename) > 0:
             # Отправляем файл
-            from telegram import FSInputFile
             document = FSInputFile(filename)
             await context.bot.send_document(
                 chat_id=user_id,
@@ -959,7 +1146,7 @@ async def test_buy_banks(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             await context.bot.send_message(
                 chat_id=user_id,
-                text=f"❌ Ошибка создания файла"
+                text=f"❌ Ошибка создания файла (файл пуст)"
             )
             
     except Exception as e:
@@ -1021,6 +1208,9 @@ async def generate_logs_csv(user_id, order_id, quantity):
     filename = f"products/logs_{order_id}_{user_id}.csv"
     
     lines = LOGS_DATA.strip().split('\n')
+    
+    if not lines:
+        return None
     
     if quantity >= len(lines):
         selected_lines = lines
@@ -1249,8 +1439,7 @@ async def check_payment_callback(update: Update, context: ContextTypes.DEFAULT_T
             else:  # banks
                 file_path = await generate_banks_csv(user_id, order_id, item.get("bank", "Неизвестный"), item["quantity"])
             
-            if file_path:
-                from telegram import FSInputFile
+            if file_path and os.path.exists(file_path):
                 document = FSInputFile(file_path)
                 await context.bot.send_document(
                     chat_id=user_id,
@@ -1308,7 +1497,7 @@ async def about(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [[InlineKeyboardButton("◀️ Назад", callback_data="back_to_menu")]]
     reply_markup = InlineKeyboardMarkup(keyboard)
     await query.edit_message_text(
-        "ℹ️ О НАС\n\n✅ Лучший магазин\n✅ Поддержка @shoplogs24support",
+        "ℹ️ О НАС\n\n✅ Лучший магазин цифровых товаров\n✅ Мгновенная выдача\n✅ Поддержка 24/7\n✅ Более 500 клиентов\n\nПоддержка: @shoplogs24support",
         reply_markup=reply_markup
     )
 
@@ -1323,8 +1512,10 @@ async def contacts(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reply_markup = InlineKeyboardMarkup(keyboard)
     await query.edit_message_text(
         "📞 КОНТАКТЫ\n\n"
-        f"Канал: {CHANNEL_URL}\n"
-        "Поддержка: @shoplogs24support",
+        f"📢 Канал: {CHANNEL_URL}\n"
+        "👤 Поддержка: @shoplogs24support\n"
+        "⏰ Время работы: 24/7\n\n"
+        "По всем вопросам обращайтесь в поддержку!",
         reply_markup=reply_markup
     )
 
@@ -1362,9 +1553,9 @@ def main():
     app.add_handler(CallbackQueryHandler(bank_quantity, pattern="^bank_"))
     app.add_handler(CallbackQueryHandler(buy_banks, pattern="^buy_banks_[0-9]+$"))
     
-    # Тесты
-    app.add_handler(CallbackQueryHandler(test_logs, pattern="test_logs$"))
-    app.add_handler(CallbackQueryHandler(test_banks, pattern="test_banks$"))
+    # Тесты (исправленные паттерны)
+    app.add_handler(CallbackQueryHandler(test_logs, pattern="^test_logs$"))
+    app.add_handler(CallbackQueryHandler(test_banks, pattern="^test_banks$"))
     app.add_handler(CallbackQueryHandler(test_bank_quantity, pattern="^test_bank_"))
     app.add_handler(CallbackQueryHandler(test_buy_logs, pattern="^test_buy_logs_[0-9]+$"))
     app.add_handler(CallbackQueryHandler(test_buy_banks, pattern="^test_buy_banks_[0-9]+$"))

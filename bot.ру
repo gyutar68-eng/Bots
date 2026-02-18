@@ -1,7 +1,8 @@
 import os
 import logging
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
+import json
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 
 # Настройка логирования
 logging.basicConfig(
@@ -22,6 +23,18 @@ if not CHANNEL_ID:
     raise ValueError("❌ НЕТ CHANNEL_ID В ОКРУЖЕНИИ!")
 
 # ============================================
+# РАЗДЕЛЫ FAQ
+# ============================================
+FAQ_SECTIONS = [
+    {"id": 1, "name": "О сервисе", "content": "ℹ️ О СЕРВИСЕ\n\nМы - лучший магазин в Telegram. Работаем с 2024 года.\n\n✅ Быстрая доставка\n✅ Честные цены\n✅ Поддержка 24/7"},
+    {"id": 2, "name": "Что такое подтверждённая УЗ", "content": "🔐 ПОДТВЕРЖДЁННАЯ УЧЁТНАЯ ЗАПИСЬ\n\nЭто аккаунт, который прошёл верификацию.\n\n✅ Подтверждённый номер\n✅ Привязанная почта\n✅ Повышенный лимит"},
+    {"id": 3, "name": "Гарантии", "content": "🛡 ГАРАНТИИ\n\nМы гарантируем:\n\n✅ Возврат средств при проблемах\n✅ Замену товара\n✅ Поддержку после покупки"},
+    {"id": 4, "name": "Репутация", "content": "⭐ РЕПУТАЦИЯ\n\nУ нас более 1000 положительных отзывов.\n\n✅ 4.9 средняя оценка\n✅ Работаем с 2024\n✅ Проверенный магазин"},
+    {"id": 5, "name": "Правила безопасности", "content": "🔒 ПРАВИЛА БЕЗОПАСНОСТИ\n\n1. Никому не передавайте код подтверждения\n2. Не переходите по подозрительным ссылкам\n3. Пишите только в поддержку"},
+    {"id": 6, "name": "Поддержка", "content": "📞 ПОДДЕРЖКА\n\nПо всем вопросам: @support\n\nВремя работы: 24/7"}
+]
+
+# ============================================
 # ФУНКЦИЯ ПРОВЕРКИ ПОДПИСКИ
 # ============================================
 async def check_subscription(user_id, context):
@@ -34,79 +47,48 @@ async def check_subscription(user_id, context):
         return False
 
 # ============================================
-# КОМАНДА /start - ПОКАЗЫВАЕТ КНОПКУ
+# ПОЛУЧЕНИЕ ПРОГРЕССА ПОЛЬЗОВАТЕЛЯ
+# ============================================
+def get_user_progress(user_id):
+    """Получает или создает прогресс пользователя по FAQ"""
+    # В реальном проекте используй БД. Здесь для примера - context.user_data
+    # Но так как у нас нет доступа к context в этой функции, будем хранить в глобальном словаре
+    if not hasattr(get_user_progress, "progress"):
+        get_user_progress.progress = {}
+    
+    if user_id not in get_user_progress.progress:
+        # Создаем прогресс для нового пользователя
+        progress = {str(section["id"]): False for section in FAQ_SECTIONS}
+        get_user_progress.progress[user_id] = progress
+    
+    return get_user_progress.progress[user_id]
+
+def save_user_progress(user_id, progress):
+    """Сохраняет прогресс пользователя"""
+    if not hasattr(get_user_progress, "progress"):
+        get_user_progress.progress = {}
+    get_user_progress.progress[user_id] = progress
+
+# ============================================
+# КОМАНДА /start
 # ============================================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработчик команды /start - показывает кнопку продолжения"""
+    """Обработчик команды /start"""
     user = update.effective_user
+    user_id = user.id
+    first_name = user.first_name
     
-    # Создаем большую кнопку внизу
-    keyboard = ReplyKeyboardMarkup(
-        [[KeyboardButton("👉 НАЖМИ ЧТОБЫ ПРОДОЛЖИТЬ 👈")]],
-        resize_keyboard=True,
-        one_time_keyboard=False
-    )
+    logger.info(f"Пользователь {user_id} ({first_name}) запустил бота")
     
-    await update.message.reply_text(
-        f"👋 Привет, {user.first_name}!\n\n"
-        f"Для начала работы нажми кнопку ниже 👇",
-        reply_markup=keyboard
-    )
+    # Проверяем подписку
+    is_subscribed = await check_subscription(user_id, context)
     
-    logger.info(f"Пользователь {user.id} запустил бота, показана кнопка")
-
-# ============================================
-# ОБРАБОТЧИК НАЖАТИЯ НА КНОПКУ ПРОДОЛЖЕНИЯ
-# ============================================
-async def handle_continue_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Когда пользователь нажимает кнопку - проверяем подписку"""
-    text = update.message.text
-    user_id = update.effective_user.id
-    
-    if text == "👉 НАЖМИ ЧТОБЫ ПРОДОЛЖИТЬ 👈":
-        logger.info(f"Пользователь {user_id} нажал кнопку продолжения")
-        
-        # Убираем кнопку (отправляем сообщение без клавиатуры)
-        await update.message.reply_text("⏳ Проверяем подписку...", reply_markup=ReplyKeyboardMarkup.remove_keyboard())
-        
-        # Проверяем подписку
-        is_subscribed = await check_subscription(user_id, context)
-        
-        if is_subscribed:
-            # Если подписан - показываем главное меню
-            await show_main_menu(update, context)
-        else:
-            # Если не подписан - просим подписаться
-            await send_subscribe_request(update, context)
+    if is_subscribed:
+        # Если подписан - показываем FAQ
+        await show_faq(update, context)
     else:
-        # Если пользователь пишет что-то другое - игнорируем
-        pass
-
-# ============================================
-# ПОКАЗ ГЛАВНОГО МЕНЮ (ДЛЯ ПОДПИСАННЫХ)
-# ============================================
-async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Отображает главное меню для подписанных пользователей"""
-    keyboard = [
-        [InlineKeyboardButton("🛍 Каталог товаров", callback_data="catalog")],
-        [InlineKeyboardButton("🛒 Моя корзина", callback_data="cart")],
-        [InlineKeyboardButton("📦 Мои заказы", callback_data="orders")],
-        [InlineKeyboardButton("ℹ️ О нас", callback_data="about")],
-        [InlineKeyboardButton("📞 Контакты", callback_data="contacts")]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    text = (
-        f"👋 Привет, {update.effective_user.first_name}!\n\n"
-        f"✅ Подписка подтверждена. Добро пожаловать в магазин!\n\n"
-        f"Выберите действие:"
-    )
-    
-    # Если это callback (возврат из другого меню)
-    if update.callback_query:
-        await update.callback_query.edit_message_text(text, reply_markup=reply_markup)
-    else:
-        await update.message.reply_text(text, reply_markup=reply_markup)
+        # Если не подписан - просим подписаться
+        await send_subscribe_request(update, context)
 
 # ============================================
 # ЗАПРОС ПОДПИСКИ (ДЛЯ НЕПОДПИСАННЫХ)
@@ -145,7 +127,8 @@ async def check_subscription_callback(update: Update, context: ContextTypes.DEFA
     is_subscribed = await check_subscription(user_id, context)
     
     if is_subscribed:
-        await show_main_menu(update, context)
+        # Если подписан - показываем FAQ
+        await show_faq(update, context)
     else:
         await query.edit_message_text(
             f"❌ Подписка не найдена!\n\n"
@@ -155,6 +138,133 @@ async def check_subscription_callback(update: Update, context: ContextTypes.DEFA
                 InlineKeyboardButton("🔗 ПОДПИСАТЬСЯ", url=CHANNEL_URL)
             ]])
         )
+
+# ============================================
+# ПОКАЗ FAQ
+# ============================================
+async def show_faq(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Отображает меню FAQ"""
+    user_id = update.effective_user.id
+    
+    # Получаем прогресс пользователя
+    if "faq_progress" not in context.user_data:
+        # Создаем прогресс для нового пользователя
+        context.user_data["faq_progress"] = {str(section["id"]): False for section in FAQ_SECTIONS}
+    
+    progress = context.user_data["faq_progress"]
+    
+    # Считаем прочитанные разделы
+    read_count = sum(1 for v in progress.values() if v)
+    total = len(FAQ_SECTIONS)
+    
+    # Создаем кнопки для каждого раздела
+    keyboard = []
+    for section in FAQ_SECTIONS:
+        section_id = str(section["id"])
+        is_read = progress.get(section_id, False)
+        emoji = "✅" if is_read else "🔗"
+        button_text = f"{emoji} {section['name']}"
+        keyboard.append([InlineKeyboardButton(button_text, callback_data=f"faq_{section_id}")])
+    
+    # Кнопка для перехода к магазину (если всё прочитано)
+    if read_count == total:
+        keyboard.append([InlineKeyboardButton("✅ ВСЁ ПРОЧИТАНО! Перейти в магазин", callback_data="go_to_shop")])
+    else:
+        keyboard.append([InlineKeyboardButton(f"✖️ Прочитайте все разделы ({read_count}/{total})", callback_data="faq_reminder")])
+    
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    text = (
+        f"📋 FAQ - Обязательное ознакомление\n\n"
+        f"Перед использованием бота необходимо ознакомиться со всеми разделами FAQ.\n\n"
+        f"✔️ Прочитано: {read_count}/{total} разделов\n\n"
+        f"Выберите раздел для изучения:"
+    )
+    
+    if update.callback_query:
+        await update.callback_query.edit_message_text(text, reply_markup=reply_markup)
+    else:
+        await update.message.reply_text(text, reply_markup=reply_markup)
+
+# ============================================
+# ОБРАБОТЧИК РАЗДЕЛОВ FAQ
+# ============================================
+async def faq_section_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Показывает содержимое раздела FAQ"""
+    query = update.callback_query
+    await query.answer()
+    
+    section_id = query.data.replace("faq_", "")
+    user_id = update.effective_user.id
+    
+    # Находим раздел
+    section = next((s for s in FAQ_SECTIONS if str(s["id"]) == section_id), None)
+    if not section:
+        return
+    
+    # Отмечаем раздел как прочитанный
+    if "faq_progress" not in context.user_data:
+        context.user_data["faq_progress"] = {}
+    
+    context.user_data["faq_progress"][section_id] = True
+    
+    # Кнопка возврата
+    keyboard = [[InlineKeyboardButton("◀️ Назад к FAQ", callback_data="back_to_faq")]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await query.edit_message_text(
+        section["content"],
+        reply_markup=reply_markup
+    )
+
+# ============================================
+# НАПОМИНАНИЕ О НЕПРОЧИТАННЫХ РАЗДЕЛАХ
+# ============================================
+async def faq_reminder_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Напоминает о непрочитанных разделах"""
+    query = update.callback_query
+    await query.answer()
+    
+    read_count = sum(1 for v in context.user_data.get("faq_progress", {}).values() if v)
+    total = len(FAQ_SECTIONS)
+    remaining = total - read_count
+    
+    await query.answer(
+        f"❌ Осталось прочитать {remaining} разделов!",
+        show_alert=True
+    )
+
+# ============================================
+# ПЕРЕХОД В МАГАЗИН
+# ============================================
+async def go_to_shop(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Переход в главное меню магазина"""
+    await show_main_menu(update, context)
+
+# ============================================
+# ПОКАЗ ГЛАВНОГО МЕНЮ (ДЛЯ ПОДПИСАННЫХ)
+# ============================================
+async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Отображает главное меню для подписанных пользователей"""
+    keyboard = [
+        [InlineKeyboardButton("🛍 Каталог товаров", callback_data="catalog")],
+        [InlineKeyboardButton("🛒 Моя корзина", callback_data="cart")],
+        [InlineKeyboardButton("📦 Мои заказы", callback_data="orders")],
+        [InlineKeyboardButton("ℹ️ О нас", callback_data="about")],
+        [InlineKeyboardButton("📞 Контакты", callback_data="contacts")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    text = (
+        f"👋 Привет, {update.effective_user.first_name}!\n\n"
+        f"✅ Все разделы FAQ изучены. Добро пожаловать в магазин!\n\n"
+        f"Выберите действие:"
+    )
+    
+    if update.callback_query:
+        await update.callback_query.edit_message_text(text, reply_markup=reply_markup)
+    else:
+        await update.message.reply_text(text, reply_markup=reply_markup)
 
 # ============================================
 # ОБРАБОТЧИКИ ДЛЯ КНОПОК МЕНЮ
@@ -227,14 +337,16 @@ def main():
     # Команда /start
     app.add_handler(CommandHandler("start", start))
     
-    # Обработчик нажатия на кнопку "НАЖМИ ЧТОБЫ ПРОДОЛЖИТЬ"
-    app.add_handler(MessageHandler(
-        filters.Text("👉 НАЖМИ ЧТОБЫ ПРОДОЛЖИТЬ 👈"), 
-        handle_continue_button
-    ))
-    
-    # Обработчики callback-запросов (inline-кнопки)
+    # Обработчики callback-запросов
     app.add_handler(CallbackQueryHandler(check_subscription_callback, pattern="check_sub"))
+    app.add_handler(CallbackQueryHandler(back_to_faq, pattern="back_to_faq"))
+    app.add_handler(CallbackQueryHandler(faq_reminder_handler, pattern="faq_reminder"))
+    app.add_handler(CallbackQueryHandler(go_to_shop, pattern="go_to_shop"))
+    
+    # Обработчики разделов FAQ (все, что начинаются с faq_ и не "faq_reminder")
+    app.add_handler(CallbackQueryHandler(faq_section_handler, pattern="^faq_[0-9]+$"))
+    
+    # Обработчики меню магазина
     app.add_handler(CallbackQueryHandler(catalog, pattern="catalog"))
     app.add_handler(CallbackQueryHandler(cart, pattern="cart"))
     app.add_handler(CallbackQueryHandler(orders, pattern="orders"))
@@ -245,8 +357,9 @@ def main():
     logger.info("🚀 Бот запущен...")
     app.run_polling()
 
-if __name__ == "__main__":
-    main()
+async def back_to_faq(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Возврат к меню FAQ"""
+    await show_faq(update, context)
 
 if __name__ == "__main__":
     main()

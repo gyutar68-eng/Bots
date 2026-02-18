@@ -427,10 +427,10 @@ async def cart(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.edit_message_text(cart_text, reply_markup=reply_markup)
 
 # ============================================
-# ФУНКЦИИ ДЛЯ КРИПТООПЛАТЫ
+# ИСПРАВЛЕННАЯ ФУНКЦИЯ КРИПТООПЛАТЫ
 # ============================================
-async def create_crypto_invoice(amount, description, user_id):
-    """Создаёт счёт в Crypto Bot"""
+async def create_crypto_invoice(amount, description, user_id, context=None):
+    """Создаёт счёт в Crypto Bot (ИСПРАВЛЕНО: добавлен context)"""
     if not CP_TOKEN:
         logger.error("❌ НЕТ CP_TOKEN!")
         return None
@@ -444,12 +444,21 @@ async def create_crypto_invoice(amount, description, user_id):
         "Content-Type": "application/json"
     }
     
+    # Получаем username бота, если есть context
+    bot_username = "your_bot_username"
+    if context:
+        try:
+            bot_info = await context.bot.get_me()
+            bot_username = bot_info.username
+        except Exception as e:
+            logger.error(f"Не удалось получить username бота: {e}")
+    
     payload = {
         "asset": "USDT",
         "amount": str(amount),
         "description": description,
         "paid_btn_name": "callback",
-        "paid_btn_url": f"https://t.me/{(await context.bot.get_me()).username}",
+        "paid_btn_url": f"https://t.me/{bot_username}",
         "allow_comments": False,
         "allow_anonymous": False
     }
@@ -476,6 +485,9 @@ async def create_crypto_invoice(amount, description, user_id):
     
     return None
 
+# ============================================
+# ФУНКЦИЯ ПРОВЕРКИ СТАТУСА ОПЛАТЫ
+# ============================================
 async def check_crypto_payment(invoice_id):
     """Проверяет статус оплаты"""
     if not CP_TOKEN:
@@ -574,9 +586,10 @@ async def send_product_file(update, context, user_id, file_path):
         return False
 
 # ============================================
-# ОФОРМЛЕНИЕ ЗАКАЗА (КРИПТООПЛАТА)
+# ИСПРАВЛЕННЫЙ ОБРАБОТЧИК ОФОРМЛЕНИЯ ЗАКАЗА
 # ============================================
 async def checkout(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Оформление заказа с криптооплатой (ИСПРАВЛЕНО)"""
     query = update.callback_query
     await query.answer()
     
@@ -584,25 +597,34 @@ async def checkout(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_cart = carts.get(user_id, [])
     
     if not user_cart:
-        await query.edit_message_text("❌ Корзина пуста")
+        await query.edit_message_text(
+            "❌ Корзина пуста",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("📦 В каталог", callback_data="catalog")
+            ]])
+        )
         return
     
     total = sum(item['price'] for item in user_cart)
     
     if not CP_TOKEN:
         await query.edit_message_text(
-            "❌ Оплата временно недоступна",
+            f"✅ ЗАКАЗ ГОТОВ (без оплаты)\n\n"
+            f"Сумма: {total} ₽\n"
+            f"Товары: {len(user_cart)} позиций\n\n"
+            f"CP_TOKEN не настроен, поэтому товар выдаётся бесплатно.",
             reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton("◀️ Назад", callback_data="cart")
+                InlineKeyboardButton("✅ Получить товар", callback_data="get_free")
             ]])
         )
         return
     
-    # Создаём счёт
+    # СОЗДАЁМ СЧЁТ - ТЕПЕРЬ ПЕРЕДАЁМ context
     invoice = await create_crypto_invoice(
         amount=total,
         description=f"Покупка {len(user_cart)} товаров",
-        user_id=user_id
+        user_id=user_id,
+        context=context  # ВАЖНО: передаём context
     )
     
     if invoice and invoice.get("pay_url"):
@@ -645,7 +667,7 @@ async def checkout(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 # ============================================
-# ПРОВЕРКА ОПЛАТЫ
+# ОБРАБОТЧИК ПРОВЕРКИ ОПЛАТЫ
 # ============================================
 async def check_payment_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -654,7 +676,6 @@ async def check_payment_callback(update: Update, context: ContextTypes.DEFAULT_T
     invoice_id = int(query.data.split("_")[2])
     user_id = query.from_user.id
     
-    # Ищем платёж
     payment_info = None
     if "pending_payments" in context.user_data:
         for p in context.user_data["pending_payments"]:
@@ -671,13 +692,11 @@ async def check_payment_callback(update: Update, context: ContextTypes.DEFAULT_T
         )
         return
     
-    # Проверяем статус
     status = await check_crypto_payment(invoice_id)
     
     if status == "paid":
         await query.edit_message_text("✅ Платёж подтверждён! Формируем товар...")
         
-        # Сохраняем заказ
         order_id = len(orders.get(user_id, [])) + 1
         if user_id not in orders:
             orders[user_id] = []
@@ -690,14 +709,12 @@ async def check_payment_callback(update: Update, context: ContextTypes.DEFAULT_T
             "date": datetime.now().isoformat()
         })
         
-        # Генерируем и отправляем файлы
         files_sent = 0
         for item in payment_info["cart"]:
             file_path = await generate_product_file(user_id, item, order_id)
             if await send_product_file(update, context, user_id, file_path):
                 files_sent += 1
         
-        # Очищаем корзину и платежи
         carts[user_id] = []
         context.user_data["pending_payments"].remove(payment_info)
         
@@ -713,6 +730,40 @@ async def check_payment_callback(update: Update, context: ContextTypes.DEFAULT_T
         await query.answer("⏳ Платёж создан, но ещё не оплачен", show_alert=True)
     else:
         await query.answer("❌ Платёж не найден или просрочен", show_alert=True)
+
+# ============================================
+# ТЕСТОВАЯ ВЫДАЧА (БЕЗ ОПЛАТЫ)
+# ============================================
+async def get_free(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    user_id = query.from_user.id
+    user_cart = carts.get(user_id, [])
+    
+    if not user_cart:
+        await query.edit_message_text("❌ Корзина пуста")
+        return
+    
+    order_id = len(orders.get(user_id, [])) + 1
+    
+    await query.edit_message_text("✅ Товар формируется...")
+    
+    files_sent = 0
+    for item in user_cart:
+        file_path = await generate_product_file(user_id, item, order_id)
+        if await send_product_file(update, context, user_id, file_path):
+            files_sent += 1
+    
+    carts[user_id] = []
+    
+    await context.bot.send_message(
+        chat_id=user_id,
+        text=f"✅ Заказ #{order_id} выполнен!\nОтправлено файлов: {files_sent}",
+        reply_markup=InlineKeyboardMarkup([[
+            InlineKeyboardButton("📦 В каталог", callback_data="catalog")
+        ]])
+    )
 
 # ============================================
 # ИСТОРИЯ ЗАКАЗОВ
@@ -806,6 +857,7 @@ def main():
     app.add_handler(CallbackQueryHandler(contacts, pattern="contacts"))
     app.add_handler(CallbackQueryHandler(checkout, pattern="checkout"))
     app.add_handler(CallbackQueryHandler(check_payment_callback, pattern="^check_payment_[0-9]+$"))
+    app.add_handler(CallbackQueryHandler(get_free, pattern="get_free"))
     
     # Обработчики покупок
     app.add_handler(CallbackQueryHandler(buy_logs, pattern="^buy_logs_[0-9]+$"))

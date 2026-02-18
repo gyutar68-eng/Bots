@@ -170,15 +170,11 @@ cached_rate = None
 last_rate_update = 0
 
 async def get_usdt_rate():
-    """Получает актуальный курс USDT к RUB с CoinGecko"""
     global cached_rate, last_rate_update
-    
     if cached_rate and (datetime.now().timestamp() - last_rate_update) < 3600:
         return cached_rate
-    
     try:
         url = "https://api.coingecko.com/api/v3/simple/price?ids=tether&vs_currencies=rub"
-        
         async with aiohttp.ClientSession() as session:
             async with session.get(url, timeout=10) as resp:
                 if resp.status == 200:
@@ -187,15 +183,12 @@ async def get_usdt_rate():
                     if rate:
                         cached_rate = rate
                         last_rate_update = datetime.now().timestamp()
-                        logger.info(f"Курс USDT/RUB: {rate}")
                         return rate
-    except Exception as e:
-        logger.error(f"Ошибка получения курса: {e}")
-    
+    except:
+        pass
     return DEFAULT_USDT_RATE
 
 async def rub_to_usdt(rub_amount):
-    """Конвертирует рубли в USDT"""
     rate = await get_usdt_rate()
     return round(rub_amount / rate, 2)
 
@@ -203,12 +196,12 @@ async def rub_to_usdt(rub_amount):
 # РАЗДЕЛЫ FAQ
 # ============================================
 FAQ_SECTIONS = [
-    {"id": 1, "name": "О сервисе", "content": "ℹ️ О СЕРВИСЕ\n\nМы - лучший магазин логов в Telegram. Работаем с 2024 года."},
-    {"id": 2, "name": "Что такое логи", "content": "📊 ЧТО ТАКОЕ ЛОГИ\n\nЭто база данных с персональными данными.\n\n✅ ФИО\n✅ Телефоны\n✅ Даты рождения\n✅ Уникальные ID"},
-    {"id": 3, "name": "Гарантии", "content": "🛡 ГАРАНТИИ\n\nМы гарантируем:\n✅ Актуальность данных\n✅ Рабочие номера\n✅ Возврат при проблемах"},
-    {"id": 4, "name": "Репутация", "content": "⭐ РЕПУТАЦИЯ\n\n✅ Более 500 довольных клиентов\n✅ Работаем с 2024\n✅ Проверенный магазин"},
-    {"id": 5, "name": "Правила безопасности", "content": "🔒 ПРАВИЛА БЕЗОПАСНОСТИ\n\n1. Никому не передавайте данные\n2. Используйте только в законных целях\n3. Поддержка @shoplogs24support"},
-    {"id": 6, "name": "Поддержка", "content": "📞 ПОДДЕРЖКА\n\nПо всем вопросам: @shoplogs24support\n\nВремя работы: 24/7"}
+    {"id": 1, "name": "О сервисе", "content": "ℹ️ О СЕРВИСЕ\n\nМы - лучший магазин логов в Telegram."},
+    {"id": 2, "name": "Что такое логи", "content": "📊 ЧТО ТАКОЕ ЛОГИ\n\nБаза данных с данными."},
+    {"id": 3, "name": "Гарантии", "content": "🛡 ГАРАНТИИ\n\nГарантируем возврат при проблемах."},
+    {"id": 4, "name": "Репутация", "content": "⭐ РЕПУТАЦИЯ\n\nБолее 500 довольных клиентов."},
+    {"id": 5, "name": "Правила безопасности", "content": "🔒 ПРАВИЛА\n\nПоддержка @shoplogs24support"},
+    {"id": 6, "name": "Поддержка", "content": "📞 ПОДДЕРЖКА\n\n@shoplogs24support"}
 ]
 
 # ============================================
@@ -238,8 +231,7 @@ async def check_subscription(user_id, context):
     try:
         member = await context.bot.get_chat_member(chat_id=CHANNEL_ID, user_id=user_id)
         return member.status in ["member", "creator", "administrator"]
-    except Exception as e:
-        logger.error(f"Ошибка проверки подписки для {user_id}: {e}")
+    except:
         return False
 
 # ============================================
@@ -247,11 +239,7 @@ async def check_subscription(user_id, context):
 # ============================================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
-    user_id = user.id
-    
-    logger.info(f"Пользователь {user_id} запустил бота")
-    
-    is_subscribed = await check_subscription(user_id, context)
+    is_subscribed = await check_subscription(user.id, context)
     
     if is_subscribed:
         await show_faq(update, context)
@@ -268,7 +256,7 @@ async def send_subscribe_request(update: Update, context: ContextTypes.DEFAULT_T
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    text = f"👋 Привет, {update.effective_user.first_name}!\n\n❌ Для доступа к боту нужно подписаться на канал:\n📢 {CHANNEL_ID}"
+    text = f"👋 Привет!\n\n❌ Для доступа подпишись на канал:\n📢 {CHANNEL_ID}"
     
     if update.callback_query:
         await update.callback_query.edit_message_text(text, reply_markup=reply_markup)
@@ -276,7 +264,7 @@ async def send_subscribe_request(update: Update, context: ContextTypes.DEFAULT_T
         await update.message.reply_text(text, reply_markup=reply_markup)
 
 # ============================================
-# ПРОВЕРКА ПОДПИСКИ ПОСЛЕ НАЖАТИЯ КНОПКИ
+# ПРОВЕРКА ПОДПИСКИ
 # ============================================
 async def check_subscription_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -323,11 +311,7 @@ async def show_faq(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    text = (
-        f"📋 FAQ - Обязательное ознакомление\n\n"
-        f"✔️ Прочитано: {read_count}/{total} разделов\n\n"
-        f"Выберите раздел для изучения:"
-    )
+    text = f"📋 FAQ\n\n✔️ Прочитано: {read_count}/{total} разделов\n\nВыберите раздел:"
     
     if update.callback_query:
         await update.callback_query.edit_message_text(text, reply_markup=reply_markup)
@@ -342,39 +326,27 @@ async def faq_section_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
     await query.answer()
     
     section_id = query.data.replace("faq_", "")
-    
     section = next((s for s in FAQ_SECTIONS if str(s["id"]) == section_id), None)
-    if not section:
-        return
     
-    if "faq_progress" not in context.user_data:
-        context.user_data["faq_progress"] = {}
-    
-    context.user_data["faq_progress"][section_id] = True
-    
-    keyboard = [[InlineKeyboardButton("◀️ Назад к FAQ", callback_data="back_to_faq")]]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    await query.edit_message_text(
-        section["content"],
-        reply_markup=reply_markup
-    )
+    if section:
+        if "faq_progress" not in context.user_data:
+            context.user_data["faq_progress"] = {}
+        context.user_data["faq_progress"][section_id] = True
+        
+        keyboard = [[InlineKeyboardButton("◀️ Назад", callback_data="back_to_faq")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.edit_message_text(section["content"], reply_markup=reply_markup)
 
 # ============================================
-# НАПОМИНАНИЕ О НЕПРОЧИТАННЫХ РАЗДЕЛАХ
+# НАПОМИНАНИЕ
 # ============================================
 async def faq_reminder_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    
     read_count = sum(1 for v in context.user_data.get("faq_progress", {}).values() if v)
     total = len(FAQ_SECTIONS)
     remaining = total - read_count
-    
-    await query.answer(
-        f"❌ Осталось прочитать {remaining} разделов!",
-        show_alert=True
-    )
+    await query.answer(f"❌ Осталось прочитать {remaining} разделов!", show_alert=True)
 
 # ============================================
 # ПЕРЕХОД В МАГАЗИН
@@ -387,15 +359,15 @@ async def go_to_shop(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ============================================
 async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
-        [InlineKeyboardButton("🛍 Каталог товаров", callback_data="catalog")],
-        [InlineKeyboardButton("🛒 Моя корзина", callback_data="cart")],
-        [InlineKeyboardButton("📦 Мои заказы", callback_data="orders")],
+        [InlineKeyboardButton("🛍 Каталог", callback_data="catalog")],
+        [InlineKeyboardButton("🛒 Корзина", callback_data="cart")],
+        [InlineKeyboardButton("📦 Заказы", callback_data="orders")],
         [InlineKeyboardButton("ℹ️ О нас", callback_data="about")],
         [InlineKeyboardButton("📞 Контакты", callback_data="contacts")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    text = f"👋 Привет, {update.effective_user.first_name}!\n\n✅ Все разделы FAQ изучены. Добро пожаловать в магазин!"
+    text = f"👋 Привет!\n\n✅ FAQ изучен. Добро пожаловать!"
     
     if update.callback_query:
         await update.callback_query.edit_message_text(text, reply_markup=reply_markup)
@@ -403,7 +375,7 @@ async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(text, reply_markup=reply_markup)
 
 # ============================================
-# КАТАЛОГ ТОВАРОВ (С КНОПКАМИ 1,3,5,10)
+# КАТАЛОГ
 # ============================================
 async def catalog(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -419,19 +391,17 @@ async def catalog(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     await query.edit_message_text(
-        "🛍 Каталог товаров\n\n"
+        "🛍 Каталог\n\n"
         "📦 Логи\n"
-        "Цены:\n"
         "• 1 шт - 1500 ₽\n"
         "• 3 шт - 4500 ₽\n"
         "• 5 шт - 7500 ₽\n"
-        "• 10 шт - 15000 ₽\n\n"
-        "После оплаты вы получите файл с данными.",
+        "• 10 шт - 15000 ₽",
         reply_markup=reply_markup
     )
 
 # ============================================
-# ПОКУПКА ТОВАРА
+# ПОКУПКА
 # ============================================
 async def buy_logs(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -439,79 +409,61 @@ async def buy_logs(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     quantity = int(query.data.split("_")[2])
     price = 1500 * quantity
-    
     user_id = query.from_user.id
+    
     if user_id not in carts:
         carts[user_id] = []
     
-    cart_item = {
-        "category": "logs",
+    carts[user_id].append({
         "product_name": f"📦 Логи ({quantity} шт)",
-        "quantity": quantity,
-        "price": price,
-        "total": price
-    }
-    carts[user_id].append(cart_item)
+        "price": price
+    })
     
     keyboard = [
-        [InlineKeyboardButton("🛒 Перейти в корзину", callback_data="cart")],
-        [InlineKeyboardButton("📦 Продолжить покупки", callback_data="catalog")]
+        [InlineKeyboardButton("🛒 В корзину", callback_data="cart")],
+        [InlineKeyboardButton("📦 В каталог", callback_data="catalog")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     await query.edit_message_text(
-        f"✅ Товар добавлен в корзину!\n\n"
+        f"✅ Добавлено!\n\n"
         f"📦 Логи ({quantity} шт)\n"
-        f"💰 Сумма: {price} ₽",
+        f"💰 {price} ₽",
         reply_markup=reply_markup
     )
 
 # ============================================
-# КОРЗИНА (С УДАЛЕНИЕМ)
+# КОРЗИНА
 # ============================================
-async def show_cart_with_delete(update: Update, context: ContextTypes.DEFAULT_TYPE, user_id):
-    user_cart = carts.get(user_id, [])
-    
-    if not user_cart:
-        keyboard = [[InlineKeyboardButton("📦 В каталог", callback_data="catalog")]]
-        await update.callback_query.edit_message_text(
-            "🛒 Ваша корзина пуста",
-            reply_markup=InlineKeyboardMarkup(keyboard)
-        )
-        return
-    
-    total = 0
-    cart_text = "🛒 ВАША КОРЗИНА:\n\n"
-    
-    keyboard = []
-    
-    for i, item in enumerate(user_cart):
-        cart_text += f"{i+1}. {item['product_name']} - {item['price']} ₽\n"
-        total += item['price']
-        
-        keyboard.append([InlineKeyboardButton(
-            f"❌ Удалить",
-            callback_data=f"remove_{i}"
-        )])
-    
-    cart_text += f"\n💰 ИТОГО: {total} ₽"
-    
-    keyboard.append([InlineKeyboardButton("✅ Оформить заказ", callback_data="checkout")])
-    keyboard.append([InlineKeyboardButton("📦 В каталог", callback_data="catalog")])
-    
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    await update.callback_query.edit_message_text(cart_text, reply_markup=reply_markup)
-
 async def cart(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     
     user_id = query.from_user.id
-    await show_cart_with_delete(update, context, user_id)
+    user_cart = carts.get(user_id, [])
+    
+    if not user_cart:
+        keyboard = [[InlineKeyboardButton("📦 В каталог", callback_data="catalog")]]
+        await query.edit_message_text("🛒 Корзина пуста", reply_markup=InlineKeyboardMarkup(keyboard))
+        return
+    
+    total = 0
+    text = "🛒 КОРЗИНА:\n\n"
+    keyboard = []
+    
+    for i, item in enumerate(user_cart):
+        text += f"{i+1}. {item['product_name']} - {item['price']} ₽\n"
+        total += item['price']
+        keyboard.append([InlineKeyboardButton(f"❌ Удалить {i+1}", callback_data=f"remove_{i}")])
+    
+    text += f"\n💰 ИТОГО: {total} ₽"
+    keyboard.append([InlineKeyboardButton("✅ Оформить", callback_data="checkout")])
+    keyboard.append([InlineKeyboardButton("📦 В каталог", callback_data="catalog")])
+    
+    await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
 
 # ============================================
-# УДАЛЕНИЕ ТОВАРА ИЗ КОРЗИНЫ
+# УДАЛЕНИЕ
 # ============================================
 async def remove_from_cart(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -522,29 +474,16 @@ async def remove_from_cart(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     if user_id in carts and 0 <= item_index < len(carts[user_id]):
         carts[user_id].pop(item_index)
-        logger.info(f"Пользователь {user_id} удалил товар из корзины")
-        await show_cart_with_delete(update, context, user_id)
-    else:
-        await query.edit_message_text(
-            "❌ Товар не найден в корзине",
-            reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton("◀️ В корзину", callback_data="cart")
-            ]])
-        )
+        await cart(update, context)
 
 # ============================================
-# ФУНКЦИЯ СОЗДАНИЯ CSV С ЛОГАМИ
+# ГЕНЕРАЦИЯ CSV
 # ============================================
 async def generate_logs_csv(user_id, order_id, quantity):
-    """Генерирует CSV файл с 200 записями"""
     os.makedirs("products", exist_ok=True)
-    
     filename = f"products/logs_{order_id}_{user_id}.csv"
     
-    # Заголовки CSV
     content = "ФИО,Телефон,Дата рождения,ID\n"
-    
-    # Добавляем все 200 записей
     lines = LOGS_DATA.strip().split('\n')
     for line in lines[:200]:
         content += line + "\n"
@@ -555,11 +494,10 @@ async def generate_logs_csv(user_id, order_id, quantity):
     return filename
 
 # ============================================
-# УПРОЩЁННАЯ ФУНКЦИЯ СОЗДАНИЯ СЧЁТА
+# СОЗДАНИЕ СЧЁТА
 # ============================================
-async def create_crypto_invoice(amount, description, user_id, context=None):
+async def create_crypto_invoice(amount, description, user_id):
     if not CP_TOKEN:
-        logger.error("❌ НЕТ CP_TOKEN!")
         return None
     
     headers = {
@@ -573,8 +511,6 @@ async def create_crypto_invoice(amount, description, user_id, context=None):
         "description": description
     }
     
-    logger.info(f"Создаём счёт для user {user_id} на {amount} USDT")
-    
     try:
         async with aiohttp.ClientSession() as session:
             async with session.post(
@@ -586,20 +522,13 @@ async def create_crypto_invoice(amount, description, user_id, context=None):
                 if resp.status == 200:
                     data = await resp.json()
                     if data.get("ok"):
-                        logger.info(f"✅ Счёт создан: {data['result']['invoice_id']}")
                         return data["result"]
-                    else:
-                        logger.error(f"Ошибка API: {data}")
-                else:
-                    text = await resp.text()
-                    logger.error(f"HTTP {resp.status}: {text}")
-    except Exception as e:
-        logger.error(f"Ошибка создания счёта: {type(e).__name__}: {e}")
-    
+    except:
+        pass
     return None
 
 # ============================================
-# ФУНКЦИЯ ПРОВЕРКИ СТАТУСА ОПЛАТЫ
+# ПРОВЕРКА СТАТУСА
 # ============================================
 async def check_crypto_payment(invoice_id, user_id):
     if not CP_TOKEN:
@@ -622,9 +551,8 @@ async def check_crypto_payment(invoice_id, user_id):
                         invoice = data["result"]["items"][0]
                         if str(user_id) in invoice.get("description", ""):
                             return invoice.get("status") == "paid"
-    except Exception as e:
-        logger.error(f"Ошибка проверки: {e}")
-    
+    except:
+        pass
     return False
 
 # ============================================
@@ -638,23 +566,17 @@ async def checkout(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_cart = carts.get(user_id, [])
     
     if not user_cart:
-        await query.edit_message_text(
-            "❌ Корзина пуста",
-            reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton("📦 В каталог", callback_data="catalog")
-            ]])
-        )
+        await query.edit_message_text("❌ Корзина пуста", reply_markup=InlineKeyboardMarkup([[
+            InlineKeyboardButton("📦 В каталог", callback_data="catalog")
+        ]]))
         return
     
     total_rub = sum(item['price'] for item in user_cart)
     
     if not CP_TOKEN:
-        await query.edit_message_text(
-            "❌ Оплата временно недоступна",
-            reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton("◀️ Назад", callback_data="cart")
-            ]])
-        )
+        await query.edit_message_text("❌ Оплата недоступна", reply_markup=InlineKeyboardMarkup([[
+            InlineKeyboardButton("◀️ Назад", callback_data="cart")
+        ]]))
         return
     
     usdt_amount = await rub_to_usdt(total_rub)
@@ -663,28 +585,24 @@ async def checkout(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if usdt_amount < 0.1:
         min_rub = int(0.1 * current_rate)
         await query.edit_message_text(
-            f"❌ Минимальная сумма заказа: 0.1 USDT (≈{min_rub} ₽)\n\n"
-            f"Ваша сумма: {total_rub} ₽ = {usdt_amount} USDT",
+            f"❌ Минимум {min_rub} ₽ (0.1 USDT)",
             reply_markup=InlineKeyboardMarkup([[
                 InlineKeyboardButton("◀️ Назад", callback_data="cart")
             ]])
         )
         return
     
-    description = f"Заказ {user_id}"
-    
     invoice = await create_crypto_invoice(
         amount=usdt_amount,
-        description=description,
-        user_id=user_id,
-        context=context
+        description=f"Заказ {user_id}",
+        user_id=user_id
     )
     
     if invoice and invoice.get("pay_url"):
         if "pending_payments" not in context.user_data:
             context.user_data["pending_payments"] = []
         
-        payment_info = {
+        context.user_data["pending_payments"].append({
             "invoice_id": invoice["invoice_id"],
             "pay_url": invoice["pay_url"],
             "amount_rub": total_rub,
@@ -692,8 +610,7 @@ async def checkout(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "rate": current_rate,
             "cart": user_cart.copy(),
             "user_id": user_id
-        }
-        context.user_data["pending_payments"].append(payment_info)
+        })
         
         keyboard = [
             [InlineKeyboardButton("💳 ОПЛАТИТЬ", url=invoice["pay_url"])],
@@ -704,18 +621,15 @@ async def checkout(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         await query.edit_message_text(
             f"💳 ОПЛАТА\n\n"
-            f"💰 Сумма: {total_rub} RUB = {usdt_amount} USDT\n"
+            f"💰 {total_rub} RUB = {usdt_amount} USDT\n"
             f"📊 Курс: {current_rate:.2f} RUB/USDT\n\n"
             f"1. Нажми ОПЛАТИТЬ\n"
-            f"2. Оплати в Crypto Bot\n"
-            f"3. Нажми «Я ОПЛАТИЛ»\n\n"
-            f"После оплаты вы получите файл с данными.",
+            f"2. Нажми «Я ОПЛАТИЛ»",
             reply_markup=reply_markup
         )
     else:
         await query.edit_message_text(
-            "❌ Ошибка создания счёта.\n\n"
-            "Попробуйте позже или обратитесь в поддержку @shoplogs24support",
+            "❌ Ошибка создания счёта.\n\nПоддержка: @shoplogs24support",
             reply_markup=InlineKeyboardMarkup([[
                 InlineKeyboardButton("◀️ Назад", callback_data="cart")
             ]])
@@ -802,14 +716,11 @@ async def orders_history(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text = "📦 ИСТОРИЯ ЗАКАЗОВ:\n\n"
         for order in user_orders[-5:]:
             text += f"Заказ #{order['order_id']} - {order['total_rub']} RUB\n"
-            for item in order['items']:
-                text += f"  • {item['product_name']}\n"
             text += f"Статус: {order['status']}\n"
             text += f"Дата: {order.get('date', '')[:10]}\n\n"
     
     keyboard = [[InlineKeyboardButton("◀️ Назад", callback_data="back_to_menu")]]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    
     await query.edit_message_text(text, reply_markup=reply_markup)
 
 # ============================================
@@ -821,12 +732,8 @@ async def about(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     keyboard = [[InlineKeyboardButton("◀️ Назад", callback_data="back_to_menu")]]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    
     await query.edit_message_text(
-        "ℹ️ О НАС\n\n"
-        "✅ Лучший магазин логов в Telegram\n"
-        "✅ Мгновенная выдача файлов\n"
-        "✅ Поддержка @shoplogs24support",
+        "ℹ️ О НАС\n\n✅ Лучший магазин логов\n✅ Поддержка @shoplogs24support",
         reply_markup=reply_markup
     )
 
@@ -839,54 +746,48 @@ async def contacts(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     keyboard = [[InlineKeyboardButton("◀️ Назад", callback_data="back_to_menu")]]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    
     await query.edit_message_text(
         "📞 КОНТАКТЫ\n\n"
         f"Канал: {CHANNEL_URL}\n"
-        "Поддержка: @shoplogs24support\n"
-        "Время работы: 24/7",
+        "Поддержка: @shoplogs24support",
         reply_markup=reply_markup
     )
+
+# ============================================
+# ВСПОМОГАТЕЛЬНЫЕ
+# ============================================
+async def back_to_faq(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await show_faq(update, context)
+
+async def back_to_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await show_main_menu(update, context)
 
 # ============================================
 # MAIN
 # ============================================
 def main():
-    """Запуск бота"""
-    try:
-        app = Application.builder().token(TOKEN).build()
-        
-        # Команда /start
-        app.add_handler(CommandHandler("start", start))
-        
-        # Обработчики callback-запросов
-        app.add_handler(CallbackQueryHandler(check_subscription_callback, pattern="check_sub"))
-        app.add_handler(CallbackQueryHandler(back_to_faq, pattern="back_to_faq"))
-        app.add_handler(CallbackQueryHandler(faq_reminder_handler, pattern="faq_reminder"))
-        app.add_handler(CallbackQueryHandler(go_to_shop, pattern="go_to_shop"))
-        app.add_handler(CallbackQueryHandler(back_to_menu, pattern="back_to_menu"))
-        
-        # Обработчики разделов FAQ
-        app.add_handler(CallbackQueryHandler(faq_section_handler, pattern="^faq_[0-9]+$"))
-        
-        # Обработчики магазина
-        app.add_handler(CallbackQueryHandler(catalog, pattern="catalog"))
-        app.add_handler(CallbackQueryHandler(buy_logs, pattern="^buy_logs_[0-9]+$"))
-        app.add_handler(CallbackQueryHandler(cart, pattern="cart"))
-        app.add_handler(CallbackQueryHandler(remove_from_cart, pattern="^remove_[0-9]+$"))
-        app.add_handler(CallbackQueryHandler(orders_history, pattern="orders"))
-        app.add_handler(CallbackQueryHandler(about, pattern="about"))
-        app.add_handler(CallbackQueryHandler(contacts, pattern="contacts"))
-        app.add_handler(CallbackQueryHandler(checkout, pattern="checkout"))
-        app.add_handler(CallbackQueryHandler(check_payment_callback, pattern="^check_[0-9]+$"))
-        
-        logger.info("🚀 Бот запускается...")
-        
-        # Запускаем polling
-        app.run_polling()
-        
-    except Exception as e:
-        logger.error(f"❌ Критическая ошибка: {e}")
+    app = Application.builder().token(TOKEN).build()
+    
+    app.add_handler(CommandHandler("start", start))
+    
+    app.add_handler(CallbackQueryHandler(check_subscription_callback, pattern="check_sub"))
+    app.add_handler(CallbackQueryHandler(back_to_faq, pattern="back_to_faq"))
+    app.add_handler(CallbackQueryHandler(faq_reminder_handler, pattern="faq_reminder"))
+    app.add_handler(CallbackQueryHandler(go_to_shop, pattern="go_to_shop"))
+    app.add_handler(CallbackQueryHandler(back_to_menu, pattern="back_to_menu"))
+    app.add_handler(CallbackQueryHandler(faq_section_handler, pattern="^faq_[0-9]+$"))
+    app.add_handler(CallbackQueryHandler(catalog, pattern="catalog"))
+    app.add_handler(CallbackQueryHandler(buy_logs, pattern="^buy_logs_[0-9]+$"))
+    app.add_handler(CallbackQueryHandler(cart, pattern="cart"))
+    app.add_handler(CallbackQueryHandler(remove_from_cart, pattern="^remove_[0-9]+$"))
+    app.add_handler(CallbackQueryHandler(orders_history, pattern="orders"))
+    app.add_handler(CallbackQueryHandler(about, pattern="about"))
+    app.add_handler(CallbackQueryHandler(contacts, pattern="contacts"))
+    app.add_handler(CallbackQueryHandler(checkout, pattern="checkout"))
+    app.add_handler(CallbackQueryHandler(check_payment_callback, pattern="^check_[0-9]+$"))
+    
+    logger.info("🚀 Бот запускается...")
+    app.run_polling()
 
 if __name__ == "__main__":
     main()

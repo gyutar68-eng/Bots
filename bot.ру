@@ -1,7 +1,7 @@
 import os
 import logging
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 
 # Настройка логирования
 logging.basicConfig(
@@ -34,25 +34,53 @@ async def check_subscription(user_id, context):
         return False
 
 # ============================================
-# КОМАНДА /start
+# КОМАНДА /start - ПОКАЗЫВАЕТ КНОПКУ
 # ============================================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработчик команды /start"""
+    """Обработчик команды /start - показывает кнопку продолжения"""
     user = update.effective_user
-    user_id = user.id
-    first_name = user.first_name
     
-    logger.info(f"Пользователь {user_id} ({first_name}) запустил бота")
+    # Создаем большую кнопку внизу
+    keyboard = ReplyKeyboardMarkup(
+        [[KeyboardButton("👉 НАЖМИ ЧТОБЫ ПРОДОЛЖИТЬ 👈")]],
+        resize_keyboard=True,
+        one_time_keyboard=False
+    )
     
-    # Проверяем подписку
-    is_subscribed = await check_subscription(user_id, context)
+    await update.message.reply_text(
+        f"👋 Привет, {user.first_name}!\n\n"
+        f"Для начала работы нажми кнопку ниже 👇",
+        reply_markup=keyboard
+    )
     
-    if is_subscribed:
-        # Если подписан - показываем главное меню
-        await show_main_menu(update, context)
+    logger.info(f"Пользователь {user.id} запустил бота, показана кнопка")
+
+# ============================================
+# ОБРАБОТЧИК НАЖАТИЯ НА КНОПКУ ПРОДОЛЖЕНИЯ
+# ============================================
+async def handle_continue_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Когда пользователь нажимает кнопку - проверяем подписку"""
+    text = update.message.text
+    user_id = update.effective_user.id
+    
+    if text == "👉 НАЖМИ ЧТОБЫ ПРОДОЛЖИТЬ 👈":
+        logger.info(f"Пользователь {user_id} нажал кнопку продолжения")
+        
+        # Убираем кнопку (отправляем сообщение без клавиатуры)
+        await update.message.reply_text("⏳ Проверяем подписку...", reply_markup=ReplyKeyboardMarkup.remove_keyboard())
+        
+        # Проверяем подписку
+        is_subscribed = await check_subscription(user_id, context)
+        
+        if is_subscribed:
+            # Если подписан - показываем главное меню
+            await show_main_menu(update, context)
+        else:
+            # Если не подписан - просим подписаться
+            await send_subscribe_request(update, context)
     else:
-        # Если не подписан - просим подписаться
-        await send_subscribe_request(update, context)
+        # Если пользователь пишет что-то другое - игнорируем
+        pass
 
 # ============================================
 # ПОКАЗ ГЛАВНОГО МЕНЮ (ДЛЯ ПОДПИСАННЫХ)
@@ -136,9 +164,7 @@ async def catalog(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     
-    # Здесь будет логика каталога
     text = "🛍 Каталог товаров\n\nСкоро здесь появятся товары..."
-    
     keyboard = [[InlineKeyboardButton("◀️ Назад", callback_data="back_to_menu")]]
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
 
@@ -196,13 +222,18 @@ async def back_to_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ============================================
 def main():
     """Запуск бота"""
-    # Создаем приложение
     app = Application.builder().token(TOKEN).build()
     
-    # Регистрируем обработчики команд
+    # Команда /start
     app.add_handler(CommandHandler("start", start))
     
-    # Регистрируем обработчики callback-запросов (кнопки)
+    # Обработчик нажатия на кнопку "НАЖМИ ЧТОБЫ ПРОДОЛЖИТЬ"
+    app.add_handler(MessageHandler(
+        filters.Text("👉 НАЖМИ ЧТОБЫ ПРОДОЛЖИТЬ 👈"), 
+        handle_continue_button
+    ))
+    
+    # Обработчики callback-запросов (inline-кнопки)
     app.add_handler(CallbackQueryHandler(check_subscription_callback, pattern="check_sub"))
     app.add_handler(CallbackQueryHandler(catalog, pattern="catalog"))
     app.add_handler(CallbackQueryHandler(cart, pattern="cart"))
@@ -213,6 +244,9 @@ def main():
     
     logger.info("🚀 Бот запущен...")
     app.run_polling()
+
+if __name__ == "__main__":
+    main()
 
 if __name__ == "__main__":
     main()

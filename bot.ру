@@ -1,0 +1,45 @@
+import os
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
+
+TOKEN = os.getenv("BOT_TOKEN")
+CHANNEL_ID = os.getenv("CHANNEL_ID")  # например @shoplogs24 или -1001234567890
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    
+    try:
+        member = await context.bot.get_chat_member(chat_id=CHANNEL_ID, user_id=user_id)
+        if member.status in ["member", "creator", "administrator"]:
+            await update.message.reply_text("✅ Ты подписан! Добро пожаловать.")
+        else:
+            await send_subscribe_message(update)
+    except:
+        await send_subscribe_message(update)
+
+async def send_subscribe_message(update: Update):
+    keyboard = [[InlineKeyboardButton("🔗 Подписаться", url=f"https://t.me/{CHANNEL_ID.replace('@', '')}")],
+                [InlineKeyboardButton("✅ Проверить подписку", callback_data="check_sub")]]
+    await update.message.reply_text("❌ Подпишись на канал:", reply_markup=InlineKeyboardMarkup(keyboard))
+
+async def check_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    try:
+        member = await context.bot.get_chat_member(chat_id=CHANNEL_ID, user_id=query.from_user.id)
+        if member.status in ["member", "creator", "administrator"]:
+            await query.edit_message_text("✅ Спасибо за подписку!")
+        else:
+            await query.edit_message_text("❌ Всё ещё не подписан.")
+    except:
+        await query.edit_message_text("⚠️ Ошибка проверки. Бот админ в канале?")
+
+def main():
+    app = Application.builder().token(TOKEN).build()
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CallbackQueryHandler(check_subscription, pattern="check_sub"))
+    app.run_polling()
+
+if __name__ == "__main__":
+    main()

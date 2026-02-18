@@ -811,102 +811,163 @@ async def buy_banks(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 # ============================================
-# ТЕСТОВАЯ ВЫДАЧА ЛОГОВ
+# ТЕСТОВАЯ ВЫДАЧА ЛОГОВ (ИСПРАВЛЕННАЯ)
 # ============================================
 async def test_buy_logs(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Тестовая выдача логов"""
     query = update.callback_query
     await query.answer()
     
-    quantity = int(query.data.split("_")[3])
+    # Получаем количество из callback_data (test_buy_logs_1, test_buy_logs_3 и т.д.)
+    parts = query.data.split("_")
+    quantity = int(parts[3])  # test_buy_logs_1 -> 1
     user_id = query.from_user.id
     
+    # Отвечаем на callback
     await query.edit_message_text("🧪 Формируем тестовый файл...")
     
-    # Генерируем тестовый CSV с логами
-    os.makedirs("products", exist_ok=True)
-    filename = f"products/test_logs_{user_id}_{uuid.uuid4().hex[:8]}.csv"
-    
-    lines = LOGS_DATA.strip().split('\n')
-    selected_lines = random.sample(lines, min(quantity, len(lines)))
-    
-    content = "ФИО,Телефон,Дата рождения,ID\n"
-    content += "\n".join(selected_lines)
-    
-    async with aiofiles.open(filename, 'w', encoding='utf-8') as f:
-        await f.write(content)
-    
-    from telegram import FSInputFile
-    document = FSInputFile(filename)
-    await context.bot.send_document(
-        chat_id=user_id,
-        document=document,
-        caption=f"🧪 Тестовые логи ({quantity} шт)"
-    )
-    
-    os.remove(filename)
-    
-    await context.bot.send_message(
-        chat_id=user_id,
-        text=f"✅ Тестовый файл отправлен!",
-        reply_markup=InlineKeyboardMarkup([[
-            InlineKeyboardButton("📦 В каталог", callback_data="catalog")
-        ]])
-    )
+    try:
+        # Создаем папку если её нет
+        os.makedirs("products", exist_ok=True)
+        
+        # Генерируем имя файла
+        filename = f"products/test_logs_{user_id}_{uuid.uuid4().hex[:8]}.csv"
+        
+        # Разбиваем данные на строки
+        lines = LOGS_DATA.strip().split('\n')
+        
+        # Выбираем случайные строки
+        if quantity >= len(lines):
+            selected_lines = lines
+        else:
+            selected_lines = random.sample(lines, quantity)
+        
+        # Создаем содержимое CSV
+        content = "ФИО,Телефон,Дата рождения,ID\n"
+        content += "\n".join(selected_lines)
+        
+        # Записываем файл
+        async with aiofiles.open(filename, 'w', encoding='utf-8') as f:
+            await f.write(content)
+        
+        # Проверяем что файл создался
+        if os.path.exists(filename):
+            # Отправляем файл
+            from telegram import FSInputFile
+            document = FSInputFile(filename)
+            await context.bot.send_document(
+                chat_id=user_id,
+                document=document,
+                caption=f"🧪 Тестовые логи ({quantity} шт)\n\nПоддержка: @shoplogs24support"
+            )
+            
+            # Удаляем файл после отправки
+            os.remove(filename)
+            
+            # Отправляем подтверждение
+            await context.bot.send_message(
+                chat_id=user_id,
+                text=f"✅ Тестовый файл отправлен!",
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton("📦 В каталог", callback_data="catalog")
+                ]])
+            )
+        else:
+            await context.bot.send_message(
+                chat_id=user_id,
+                text=f"❌ Ошибка создания файла"
+            )
+            
+    except Exception as e:
+        logger.error(f"Ошибка в test_buy_logs: {e}")
+        await context.bot.send_message(
+            chat_id=user_id,
+            text=f"❌ Ошибка: {str(e)[:100]}"
+        )
 
 # ============================================
-# ТЕСТОВАЯ ВЫДАЧА БАНКОВ
+# ТЕСТОВАЯ ВЫДАЧА БАНКОВ (ИСПРАВЛЕННАЯ)
 # ============================================
 async def test_buy_banks(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Тестовая выдача банковских данных"""
     query = update.callback_query
     await query.answer()
     
-    quantity = int(query.data.split("_")[3])
+    # Получаем количество из callback_data (test_buy_banks_1, test_buy_banks_3 и т.д.)
+    parts = query.data.split("_")
+    quantity = int(parts[3])  # test_buy_banks_1 -> 1
     user_id = query.from_user.id
     bank_name = context.user_data.get("test_bank", "Неизвестный банк")
     
+    # Отвечаем на callback
     await query.edit_message_text("🧪 Формируем тестовый файл...")
     
-    # Фильтруем записи по банку
-    bank_entries = [item for item in BANKS_LIST if item["bank"] == bank_name]
-    
-    if not bank_entries:
+    try:
+        # Фильтруем записи по банку
+        bank_entries = [item for item in BANKS_LIST if item["bank"] == bank_name]
+        
+        if not bank_entries:
+            await context.bot.send_message(
+                chat_id=user_id,
+                text=f"❌ Нет данных для банка {bank_name}"
+            )
+            return
+        
+        # Выбираем случайные записи
+        if quantity >= len(bank_entries):
+            selected = bank_entries
+        else:
+            selected = random.sample(bank_entries, quantity)
+        
+        # Создаем папку если её нет
+        os.makedirs("products", exist_ok=True)
+        
+        # Генерируем имя файла
+        filename = f"products/test_banks_{user_id}_{uuid.uuid4().hex[:8]}.csv"
+        
+        # Создаем содержимое CSV
+        content = "Банк,Логин,Пароль,Телефон,ФИО,Дата рождения\n"
+        for item in selected:
+            content += f"{item['bank']},{item['login']},{item['password']},{item['phone']},{item['fullname']},{item['birth']}\n"
+        
+        # Записываем файл
+        async with aiofiles.open(filename, 'w', encoding='utf-8') as f:
+            await f.write(content)
+        
+        # Проверяем что файл создался
+        if os.path.exists(filename):
+            # Отправляем файл
+            from telegram import FSInputFile
+            document = FSInputFile(filename)
+            await context.bot.send_document(
+                chat_id=user_id,
+                document=document,
+                caption=f"🧪 Тестовые {bank_name} ({quantity} шт)\n\nПоддержка: @shoplogs24support"
+            )
+            
+            # Удаляем файл после отправки
+            os.remove(filename)
+            
+            # Отправляем подтверждение
+            await context.bot.send_message(
+                chat_id=user_id,
+                text=f"✅ Тестовый файл отправлен!",
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton("📦 В каталог", callback_data="catalog")
+                ]])
+            )
+        else:
+            await context.bot.send_message(
+                chat_id=user_id,
+                text=f"❌ Ошибка создания файла"
+            )
+            
+    except Exception as e:
+        logger.error(f"Ошибка в test_buy_banks: {e}")
         await context.bot.send_message(
             chat_id=user_id,
-            text=f"❌ Нет данных для банка {bank_name}"
+            text=f"❌ Ошибка: {str(e)[:100]}"
         )
-        return
-    
-    # Выбираем случайные записи
-    selected = random.sample(bank_entries, min(quantity, len(bank_entries)))
-    
-    # Генерируем CSV
-    os.makedirs("products", exist_ok=True)
-    filename = f"products/test_banks_{user_id}_{uuid.uuid4().hex[:8]}.csv"
-    
-    content = "Банк,Логин,Пароль,Телефон,ФИО,Дата рождения\n"
-    for item in selected:
-        content += f"{item['bank']},{item['login']},{item['password']},{item['phone']},{item['fullname']},{item['birth']}\n"
-    
-    async with aiofiles.open(filename, 'w', encoding='utf-8') as f:
-        await f.write(content)
-    
-    from telegram import FSInputFile
-    document = FSInputFile(filename)
-    await context.bot.send_document(
-        chat_id=user_id,
-        document=document,
-        caption=f"🧪 Тестовые {bank_name} ({quantity} шт)"
-    )
-    
-    os.remove(filename)
-    
-    await context.bot.send_message(
-        chat_id=user_id,
-        text=f"✅ Тестовый файл отправлен!",
-        reply_markup=InlineKeyboardMarkup([[
-            InlineKeyboardButton("📦 В каталог", callback_data="catalog")
-        ]])
-    )
 
 # ============================================
 # КОРЗИНА
@@ -960,7 +1021,11 @@ async def generate_logs_csv(user_id, order_id, quantity):
     filename = f"products/logs_{order_id}_{user_id}.csv"
     
     lines = LOGS_DATA.strip().split('\n')
-    selected_lines = random.sample(lines, min(quantity, len(lines)))
+    
+    if quantity >= len(lines):
+        selected_lines = lines
+    else:
+        selected_lines = random.sample(lines, quantity)
     
     content = "ФИО,Телефон,Дата рождения,ID\n"
     content += "\n".join(selected_lines)
@@ -984,7 +1049,10 @@ async def generate_banks_csv(user_id, order_id, bank_name, quantity):
         return None
     
     # Выбираем случайные записи
-    selected = random.sample(bank_entries, min(quantity, len(bank_entries)))
+    if quantity >= len(bank_entries):
+        selected = bank_entries
+    else:
+        selected = random.sample(bank_entries, quantity)
     
     content = "Банк,Логин,Пароль,Телефон,ФИО,Дата рождения\n"
     for item in selected:

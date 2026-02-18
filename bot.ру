@@ -392,7 +392,7 @@ FAQ_SECTIONS = [
 🔹 Наша миссия: предоставлять качественные данные по доступным ценам
 🔹 Более 500 довольных клиентов
 🔹 24/7 поддержка
-🔹 Мгновенная автоматическая выдача товаров
+🔹 Мгновенная автоматическая выдача товаров в формате CSV
 
 ✅ Преимущества:
 • Все товары проходят проверку перед продажей
@@ -415,6 +415,9 @@ FAQ_SECTIONS = [
 • Даты рождения
 • Уникальные идентификаторы
 
+🔹 Все файлы выдаются в формате CSV (можно открыть в Excel)
+🔹 200+ записей в каждой базе
+
 🔹 Для чего используются:
 • Маркетинговые исследования
 • Анализ аудитории
@@ -425,7 +428,6 @@ FAQ_SECTIONS = [
 • Все данные уникальны
 • Регулярное обновление базы
 • Проверка на актуальность
-• 200+ записей в каждой базе
 
 ⚠️ ВАЖНО: Используйте данные только в законных целях!"""
     },
@@ -445,7 +447,8 @@ FAQ_SECTIONS = [
 • Райффайзенбанк
 • И многие другие (15+ банков)
 
-🔹 Что входит в комплект:
+🔹 Что входит в комплект (формат CSV):
+• Банк
 • Логин
 • Пароль
 • Номер телефона
@@ -481,7 +484,7 @@ FAQ_SECTIONS = [
 🔹 Условия возврата:
 • Товар не соответствует описанию
 • Данные не работают
-• Технические проблемы с файлом
+• Технические проблемы с файлом CSV
 • Двойная оплата
 
 🔹 Процедура возврата:
@@ -514,7 +517,7 @@ FAQ_SECTIONS = [
 • Использовать отдельный пароль для покупок
 • Не хранить данные в открытом доступе
 • Сообщать о подозрительной активности
-• Делать резервные копии файлов
+• Делать резервные копии CSV файлов
 
 🔐 БЕЗОПАСНОСТЬ:
 • Все транзакции защищены
@@ -538,7 +541,7 @@ FAQ_SECTIONS = [
 
 🔹 ПО КАКИМ ВОПРОСАМ ОБРАЩАТЬСЯ:
 • Проблемы с оплатой
-• Ошибки при получении файлов
+• Ошибки при получении CSV файлов
 • Замена товара
 • Возврат средств
 • Общие вопросы
@@ -715,7 +718,7 @@ async def go_to_shop(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await show_main_menu(update, context)
 
 # ============================================
-# ПОКАЗ ГЛАВНОГО МЕНЮ
+# ПОКАЗ ГЛАВНОГО МЕНЮ (ДОБАВЛЕНА КНОПКА ПОДДЕРЖКИ)
 # ============================================
 async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
@@ -723,11 +726,12 @@ async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("🛒 Корзина", callback_data="cart")],
         [InlineKeyboardButton("📦 Заказы", callback_data="orders")],
         [InlineKeyboardButton("ℹ️ О нас", callback_data="about")],
-        [InlineKeyboardButton("📞 Контакты", callback_data="contacts")]
+        [InlineKeyboardButton("📞 Контакты", callback_data="contacts")],
+        [InlineKeyboardButton("❤️ Поддержать проект", callback_data="donate")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    text = f"👋 Привет!\n\n✅ FAQ изучен. Добро пожаловать!"
+    text = f"👋 Привет!\n\n✅ FAQ изучен. Добро пожаловать!\n\nВсе товары выдаются в формате CSV (открывается в Excel)."
     
     if update.callback_query:
         await update.callback_query.edit_message_text(text, reply_markup=reply_markup)
@@ -742,15 +746,14 @@ async def catalog(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     
     keyboard = [
-        [InlineKeyboardButton("📦 Логи", callback_data="category_logs")],
-        [InlineKeyboardButton("🏦 Личные кабинеты банков", callback_data="category_banks")],
-        [InlineKeyboardButton("🧪 Тестовые товары", callback_data="category_test")],
+        [InlineKeyboardButton("📦 Логи (CSV)", callback_data="category_logs")],
+        [InlineKeyboardButton("🏦 Личные кабинеты банков (CSV)", callback_data="category_banks")],
         [InlineKeyboardButton("◀️ Назад", callback_data="back_to_menu")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     await query.edit_message_text(
-        "🛍 Каталог\n\nВыберите категорию:",
+        "🛍 Каталог\n\nВсе товары выдаются в формате CSV.\n\nВыберите категорию:",
         reply_markup=reply_markup
     )
 
@@ -762,16 +765,17 @@ async def category_logs(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     
     keyboard = [
-        [InlineKeyboardButton("1 шт - 1500 ₽", callback_data="buy_logs_1")],
-        [InlineKeyboardButton("3 шт - 4500 ₽", callback_data="buy_logs_3")],
-        [InlineKeyboardButton("5 шт - 7500 ₽", callback_data="buy_logs_5")],
-        [InlineKeyboardButton("10 шт - 15000 ₽", callback_data="buy_logs_10")],
+        [InlineKeyboardButton("1 шт - 1500 ₽ (CSV)", callback_data="buy_logs_1")],
+        [InlineKeyboardButton("3 шт - 4500 ₽ (CSV)", callback_data="buy_logs_3")],
+        [InlineKeyboardButton("5 шт - 7500 ₽ (CSV)", callback_data="buy_logs_5")],
+        [InlineKeyboardButton("10 шт - 15000 ₽ (CSV)", callback_data="buy_logs_10")],
         [InlineKeyboardButton("◀️ Назад", callback_data="catalog")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     await query.edit_message_text(
         "📦 Логи\n\n"
+        "Все файлы в формате CSV (открываются в Excel).\n\n"
         "Цены:\n"
         "• 1 шт - 1500 ₽\n"
         "• 3 шт - 4500 ₽\n"
@@ -796,7 +800,7 @@ async def category_banks(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     await query.edit_message_text(
-        "🏦 Выберите банк:",
+        "🏦 Выберите банк\n\nВсе файлы в формате CSV:",
         reply_markup=reply_markup
     )
 
@@ -811,105 +815,20 @@ async def bank_quantity(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["selected_bank"] = bank_name
     
     keyboard = [
-        [InlineKeyboardButton("1 шт - 2000 ₽", callback_data="buy_banks_1")],
-        [InlineKeyboardButton("3 шт - 5000 ₽", callback_data="buy_banks_3")],
-        [InlineKeyboardButton("5 шт - 8500 ₽", callback_data="buy_banks_5")],
+        [InlineKeyboardButton("1 шт - 2000 ₽ (CSV)", callback_data="buy_banks_1")],
+        [InlineKeyboardButton("3 шт - 5000 ₽ (CSV)", callback_data="buy_banks_3")],
+        [InlineKeyboardButton("5 шт - 8500 ₽ (CSV)", callback_data="buy_banks_5")],
         [InlineKeyboardButton("◀️ Назад", callback_data="category_banks")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     await query.edit_message_text(
         f"🏦 {bank_name}\n\n"
+        f"Все файлы в формате CSV.\n\n"
         f"Цены:\n"
         f"• 1 шт - 2000 ₽\n"
         f"• 3 шт - 5000 ₽\n"
         f"• 5 шт - 8500 ₽",
-        reply_markup=reply_markup
-    )
-
-# ============================================
-# КАТЕГОРИЯ ТЕСТОВЫЕ ТОВАРЫ
-# ============================================
-async def category_test(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    
-    keyboard = [
-        [InlineKeyboardButton("🧪 Тестовые логи", callback_data="test_logs")],
-        [InlineKeyboardButton("🧪 Тестовые личные кабинеты", callback_data="test_banks")],
-        [InlineKeyboardButton("◀️ Назад", callback_data="catalog")]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    await query.edit_message_text(
-        "🧪 Тестовые товары\n\n"
-        "Выберите товар для тестовой выдачи (бесплатно):",
-        reply_markup=reply_markup
-    )
-
-# ============================================
-# ТЕСТОВАЯ ПОКУПКА ЛОГОВ
-# ============================================
-async def test_logs(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    
-    keyboard = [
-        [InlineKeyboardButton("1 шт (тест)", callback_data="test_buy_logs_1")],
-        [InlineKeyboardButton("3 шт (тест)", callback_data="test_buy_logs_3")],
-        [InlineKeyboardButton("5 шт (тест)", callback_data="test_buy_logs_5")],
-        [InlineKeyboardButton("10 шт (тест)", callback_data="test_buy_logs_10")],
-        [InlineKeyboardButton("◀️ Назад", callback_data="category_test")]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    await query.edit_message_text(
-        "🧪 Тестовые логи\n\n"
-        "Выберите количество для теста (бесплатно):",
-        reply_markup=reply_markup
-    )
-
-# ============================================
-# ТЕСТОВАЯ ПОКУПКА БАНКОВ
-# ============================================
-async def test_banks(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    
-    # Создаем кнопки для каждого банка
-    keyboard = []
-    for bank in UNIQUE_BANKS[:10]:
-        keyboard.append([InlineKeyboardButton(f"🧪 {bank}", callback_data=f"test_bank_{bank}")])
-    
-    keyboard.append([InlineKeyboardButton("◀️ Назад", callback_data="category_test")])
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    await query.edit_message_text(
-        "🧪 Выберите банк для теста (бесплатно):",
-        reply_markup=reply_markup
-    )
-
-# ============================================
-# ТЕСТОВЫЙ ВЫБОР КОЛИЧЕСТВА ДЛЯ БАНКА
-# ============================================
-async def test_bank_quantity(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    
-    bank_name = query.data.replace("test_bank_", "")
-    context.user_data["test_bank"] = bank_name
-    
-    keyboard = [
-        [InlineKeyboardButton("1 шт (тест)", callback_data="test_buy_banks_1")],
-        [InlineKeyboardButton("3 шт (тест)", callback_data="test_buy_banks_3")],
-        [InlineKeyboardButton("5 шт (тест)", callback_data="test_buy_banks_5")],
-        [InlineKeyboardButton("◀️ Назад", callback_data="test_banks")]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    await query.edit_message_text(
-        f"🧪 {bank_name}\n\n"
-        f"Выберите количество для теста:",
         reply_markup=reply_markup
     )
 
@@ -942,7 +861,7 @@ async def buy_logs(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await query.edit_message_text(
         f"✅ Добавлено!\n\n"
-        f"📦 Логи ({quantity} шт)\n"
+        f"📦 Логи ({quantity} шт) - формат CSV\n"
         f"💰 {price} ₽",
         reply_markup=reply_markup
     )
@@ -978,183 +897,10 @@ async def buy_banks(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await query.edit_message_text(
         f"✅ Добавлено!\n\n"
-        f"🏦 {bank_name} ({quantity} шт)\n"
+        f"🏦 {bank_name} ({quantity} шт) - формат CSV\n"
         f"💰 {price} ₽",
         reply_markup=reply_markup
     )
-
-# ============================================
-# ТЕСТОВАЯ ВЫДАЧА ЛОГОВ (ИСПРАВЛЕННАЯ)
-# ============================================
-async def test_buy_logs(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Тестовая выдача логов"""
-    query = update.callback_query
-    await query.answer()
-    
-    # Получаем количество из callback_data (test_buy_logs_1, test_buy_logs_3 и т.д.)
-    parts = query.data.split("_")
-    if len(parts) < 4:
-        await query.edit_message_text("❌ Ошибка: неверный формат данных")
-        return
-    
-    quantity = int(parts[3])  # test_buy_logs_1 -> 1
-    user_id = query.from_user.id
-    
-    # Отвечаем на callback
-    await query.edit_message_text("🧪 Формируем тестовый файл...")
-    
-    try:
-        # Создаем папку если её нет
-        os.makedirs("products", exist_ok=True)
-        
-        # Генерируем имя файла
-        filename = f"products/test_logs_{user_id}_{uuid.uuid4().hex[:8]}.csv"
-        
-        # Разбиваем данные на строки
-        lines = LOGS_DATA.strip().split('\n')
-        
-        # Проверяем что есть данные
-        if not lines:
-            await context.bot.send_message(
-                chat_id=user_id,
-                text=f"❌ Нет данных для генерации"
-            )
-            return
-        
-        # Выбираем случайные строки
-        if quantity >= len(lines):
-            selected_lines = lines
-        else:
-            selected_lines = random.sample(lines, quantity)
-        
-        # Создаем содержимое CSV
-        content = "ФИО,Телефон,Дата рождения,ID\n"
-        content += "\n".join(selected_lines)
-        
-        # Записываем файл
-        async with aiofiles.open(filename, 'w', encoding='utf-8') as f:
-            await f.write(content)
-        
-        # Проверяем что файл создался
-        if os.path.exists(filename) and os.path.getsize(filename) > 0:
-            # Отправляем файл через обычный open()
-            with open(filename, 'rb') as f:
-                await context.bot.send_document(
-                    chat_id=user_id,
-                    document=f,
-                    caption=f"🧪 Тестовые логи ({quantity} шт)\n\nПоддержка: @shoplogs24support"
-                )
-            
-            # Удаляем файл после отправки
-            os.remove(filename)
-            
-            # Отправляем подтверждение
-            await context.bot.send_message(
-                chat_id=user_id,
-                text=f"✅ Тестовый файл отправлен!",
-                reply_markup=InlineKeyboardMarkup([[
-                    InlineKeyboardButton("📦 В каталог", callback_data="catalog")
-                ]])
-            )
-        else:
-            await context.bot.send_message(
-                chat_id=user_id,
-                text=f"❌ Ошибка создания файла (файл пуст)"
-            )
-            
-    except Exception as e:
-        logger.error(f"Ошибка в test_buy_logs: {e}")
-        await context.bot.send_message(
-            chat_id=user_id,
-            text=f"❌ Ошибка: {str(e)[:100]}"
-        )
-
-# ============================================
-# ТЕСТОВАЯ ВЫДАЧА БАНКОВ (ИСПРАВЛЕННАЯ)
-# ============================================
-async def test_buy_banks(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Тестовая выдача банковских данных"""
-    query = update.callback_query
-    await query.answer()
-    
-    # Получаем количество из callback_data (test_buy_banks_1, test_buy_banks_3 и т.д.)
-    parts = query.data.split("_")
-    if len(parts) < 4:
-        await query.edit_message_text("❌ Ошибка: неверный формат данных")
-        return
-    
-    quantity = int(parts[3])  # test_buy_banks_1 -> 1
-    user_id = query.from_user.id
-    bank_name = context.user_data.get("test_bank", "Неизвестный банк")
-    
-    # Отвечаем на callback
-    await query.edit_message_text("🧪 Формируем тестовый файл...")
-    
-    try:
-        # Фильтруем записи по банку
-        bank_entries = [item for item in BANKS_LIST if item["bank"] == bank_name]
-        
-        if not bank_entries:
-            await context.bot.send_message(
-                chat_id=user_id,
-                text=f"❌ Нет данных для банка {bank_name}"
-            )
-            return
-        
-        # Выбираем случайные записи
-        if quantity >= len(bank_entries):
-            selected = bank_entries
-        else:
-            selected = random.sample(bank_entries, quantity)
-        
-        # Создаем папку если её нет
-        os.makedirs("products", exist_ok=True)
-        
-        # Генерируем имя файла
-        filename = f"products/test_banks_{user_id}_{uuid.uuid4().hex[:8]}.csv"
-        
-        # Создаем содержимое CSV
-        content = "Банк,Логин,Пароль,Телефон,ФИО,Дата рождения\n"
-        for item in selected:
-            content += f"{item['bank']},{item['login']},{item['password']},{item['phone']},{item['fullname']},{item['birth']}\n"
-        
-        # Записываем файл
-        async with aiofiles.open(filename, 'w', encoding='utf-8') as f:
-            await f.write(content)
-        
-        # Проверяем что файл создался
-        if os.path.exists(filename) and os.path.getsize(filename) > 0:
-            # Отправляем файл через обычный open()
-            with open(filename, 'rb') as f:
-                await context.bot.send_document(
-                    chat_id=user_id,
-                    document=f,
-                    caption=f"🧪 Тестовые {bank_name} ({quantity} шт)\n\nПоддержка: @shoplogs24support"
-                )
-            
-            # Удаляем файл после отправки
-            os.remove(filename)
-            
-            # Отправляем подтверждение
-            await context.bot.send_message(
-                chat_id=user_id,
-                text=f"✅ Тестовый файл отправлен!",
-                reply_markup=InlineKeyboardMarkup([[
-                    InlineKeyboardButton("📦 В каталог", callback_data="catalog")
-                ]])
-            )
-        else:
-            await context.bot.send_message(
-                chat_id=user_id,
-                text=f"❌ Ошибка создания файла (файл пуст)"
-            )
-            
-    except Exception as e:
-        logger.error(f"Ошибка в test_buy_banks: {e}")
-        await context.bot.send_message(
-            chat_id=user_id,
-            text=f"❌ Ошибка: {str(e)[:100]}"
-        )
 
 # ============================================
 # КОРЗИНА
@@ -1176,11 +922,11 @@ async def cart(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = []
     
     for i, item in enumerate(user_cart):
-        text += f"{i+1}. {item['product_name']} - {item['price']} ₽\n"
+        text += f"{i+1}. {item['product_name']} - {item['price']} ₽ (CSV)\n"
         total += item['price']
         keyboard.append([InlineKeyboardButton(f"❌ Удалить {i+1}", callback_data=f"remove_{i}")])
     
-    text += f"\n💰 ИТОГО: {total} ₽"
+    text += f"\n💰 ИТОГО: {total} ₽\n\nВсе товары в формате CSV."
     keyboard.append([InlineKeyboardButton("✅ Оформить", callback_data="checkout")])
     keyboard.append([InlineKeyboardButton("📦 В каталог", callback_data="catalog")])
     
@@ -1380,6 +1126,7 @@ async def checkout(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"💳 ОПЛАТА\n\n"
             f"💰 {total_rub} RUB = {usdt_amount} USDT\n"
             f"📊 Курс: {current_rate:.2f} RUB/USDT\n\n"
+            f"После оплаты вы получите CSV файлы с данными.\n\n"
             f"1. Нажми ОПЛАТИТЬ\n"
             f"2. Нажми «Я ОПЛАТИЛ»",
             reply_markup=reply_markup
@@ -1416,7 +1163,7 @@ async def check_payment_callback(update: Update, context: ContextTypes.DEFAULT_T
     is_paid = await check_crypto_payment(invoice_id, user_id)
     
     if is_paid:
-        await query.edit_message_text("✅ Платёж подтверждён! Формируем файл...")
+        await query.edit_message_text("✅ Платёж подтверждён! Формируем CSV файлы...")
         
         order_id = len(orders.get(user_id, [])) + 1
         if user_id not in orders:
@@ -1444,7 +1191,7 @@ async def check_payment_callback(update: Update, context: ContextTypes.DEFAULT_T
                     await context.bot.send_document(
                         chat_id=user_id,
                         document=f,
-                        caption=f"✅ Заказ #{order_id}\n\n{item['product_name']}\n\nПоддержка: @shoplogs24support"
+                        caption=f"✅ Заказ #{order_id}\n\n{item['product_name']}\n\nФайл в формате CSV\n\nПоддержка: @shoplogs24support"
                     )
                 os.remove(file_path)
                 files_sent += 1
@@ -1454,7 +1201,7 @@ async def check_payment_callback(update: Update, context: ContextTypes.DEFAULT_T
         
         await context.bot.send_message(
             chat_id=user_id,
-            text=f"✅ Заказ выполнен! Отправлено файлов: {files_sent}",
+            text=f"✅ Заказ выполнен! Отправлено файлов: {files_sent}\n\nВсе файлы в формате CSV.",
             reply_markup=InlineKeyboardMarkup([[
                 InlineKeyboardButton("📦 В каталог", callback_data="catalog")
             ]])
@@ -1475,7 +1222,7 @@ async def orders_history(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not user_orders:
         text = "📦 У вас пока нет заказов"
     else:
-        text = "📦 ИСТОРИЯ ЗАКАЗОВ:\n\n"
+        text = "📦 ИСТОРИЯ ЗАКАЗОВ (CSV файлы):\n\n"
         for order in user_orders[-5:]:
             text += f"Заказ #{order['order_id']} - {order['total_rub']} RUB\n"
             for item in order['items']:
@@ -1488,6 +1235,126 @@ async def orders_history(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.edit_message_text(text, reply_markup=reply_markup)
 
 # ============================================
+# ДОНАТ (ПОДДЕРЖКА ПРОЕКТА)
+# ============================================
+async def donate(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Поддержка проекта добровольными пожертвованиями"""
+    query = update.callback_query
+    await query.answer()
+    
+    keyboard = [
+        [InlineKeyboardButton("0.1 USDT (≈ 9 ₽)", callback_data="donate_0.1")],
+        [InlineKeyboardButton("0.5 USDT (≈ 45 ₽)", callback_data="donate_0.5")],
+        [InlineKeyboardButton("1 USDT (≈ 90 ₽)", callback_data="donate_1")],
+        [InlineKeyboardButton("5 USDT (≈ 450 ₽)", callback_data="donate_5")],
+        [InlineKeyboardButton("10 USDT (≈ 900 ₽)", callback_data="donate_10")],
+        [InlineKeyboardButton("50 USDT (≈ 4500 ₽)", callback_data="donate_50")],
+        [InlineKeyboardButton("100 USDT (≈ 9000 ₽)", callback_data="donate_100")],
+        [InlineKeyboardButton("◀️ Назад", callback_data="back_to_menu")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    current_rate = await get_usdt_rate()
+    
+    await query.edit_message_text(
+        f"❤️ ПОДДЕРЖАТЬ ПРОЕКТ\n\n"
+        f"Если вам нравится наш бот и вы хотите поддержать его развитие, "
+        f"вы можете сделать добровольное пожертвование.\n\n"
+        f"💰 Текущий курс: 1 USDT ≈ {current_rate:.2f} ₽\n\n"
+        f"Выберите сумму пожертвования:",
+        reply_markup=reply_markup
+    )
+
+async def donate_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработчик выбора суммы пожертвования"""
+    query = update.callback_query
+    await query.answer()
+    
+    amount = float(query.data.replace("donate_", ""))
+    user_id = query.from_user.id
+    
+    description = f"Пожертвование от {user_id}"
+    
+    invoice = await create_crypto_invoice(
+        amount=amount,
+        description=description,
+        user_id=user_id
+    )
+    
+    if invoice and invoice.get("pay_url"):
+        # Сохраняем информацию о пожертвовании
+        if "donations" not in context.user_data:
+            context.user_data["donations"] = []
+        
+        context.user_data["donations"].append({
+            "invoice_id": invoice["invoice_id"],
+            "amount": amount,
+            "user_id": user_id,
+            "date": datetime.now().isoformat()
+        })
+        
+        keyboard = [
+            [InlineKeyboardButton("💳 ОПЛАТИТЬ", url=invoice["pay_url"])],
+            [InlineKeyboardButton("✅ Я ОПЛАТИЛ", callback_data=f"check_donate_{invoice['invoice_id']}")],
+            [InlineKeyboardButton("◀️ Назад", callback_data="donate")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await query.edit_message_text(
+            f"❤️ ПОДДЕРЖКА ПРОЕКТА\n\n"
+            f"Сумма пожертвования: {amount} USDT\n\n"
+            f"1. Нажми ОПЛАТИТЬ\n"
+            f"2. Оплати через Crypto Bot\n"
+            f"3. Нажми «Я ОПЛАТИЛ»\n\n"
+            f"Спасибо за вашу поддержку! 🙏",
+            reply_markup=reply_markup
+        )
+    else:
+        await query.edit_message_text(
+            "❌ Ошибка создания счёта.\n\nПопробуйте позже.",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("◀️ Назад", callback_data="donate")
+            ]])
+        )
+
+async def check_donate_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Проверка оплаты пожертвования"""
+    query = update.callback_query
+    await query.answer()
+    
+    invoice_id = int(query.data.split("_")[2])
+    user_id = query.from_user.id
+    
+    # Ищем пожертвование
+    donation_info = None
+    if "donations" in context.user_data:
+        for d in context.user_data["donations"]:
+            if d["invoice_id"] == invoice_id and d["user_id"] == user_id:
+                donation_info = d
+                break
+    
+    if not donation_info:
+        await query.answer("❌ Платёж не найден", show_alert=True)
+        return
+    
+    is_paid = await check_crypto_payment(invoice_id, user_id)
+    
+    if is_paid:
+        await query.edit_message_text(
+            f"✅ Спасибо за ваше пожертвование в размере {donation_info['amount']} USDT!\n\n"
+            f"Благодаря таким людям как вы, проект продолжает развиваться! ❤️",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("📦 В каталог", callback_data="catalog")
+            ]])
+        )
+        
+        # Удаляем информацию о пожертвовании
+        context.user_data["donations"].remove(donation_info)
+        
+    else:
+        await query.answer("⏳ Платёж не найден или не оплачен", show_alert=True)
+
+# ============================================
 # О НАС
 # ============================================
 async def about(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1497,7 +1364,13 @@ async def about(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [[InlineKeyboardButton("◀️ Назад", callback_data="back_to_menu")]]
     reply_markup = InlineKeyboardMarkup(keyboard)
     await query.edit_message_text(
-        "ℹ️ О НАС\n\n✅ Лучший магазин цифровых товаров\n✅ Мгновенная выдача\n✅ Поддержка 24/7\n✅ Более 500 клиентов\n\nПоддержка: @shoplogs24support",
+        "ℹ️ О НАС\n\n"
+        "✅ Лучший магазин цифровых товаров\n"
+        "✅ Все файлы в формате CSV\n"
+        "✅ Мгновенная выдача\n"
+        "✅ Поддержка 24/7\n"
+        "✅ Более 500 клиентов\n\n"
+        "Поддержка: @shoplogs24support",
         reply_markup=reply_markup
     )
 
@@ -1547,18 +1420,10 @@ def main():
     app.add_handler(CallbackQueryHandler(catalog, pattern="catalog"))
     app.add_handler(CallbackQueryHandler(category_logs, pattern="category_logs"))
     app.add_handler(CallbackQueryHandler(category_banks, pattern="category_banks"))
-    app.add_handler(CallbackQueryHandler(category_test, pattern="category_test"))
     
     # Банки
     app.add_handler(CallbackQueryHandler(bank_quantity, pattern="^bank_"))
     app.add_handler(CallbackQueryHandler(buy_banks, pattern="^buy_banks_[0-9]+$"))
-    
-    # Тесты (исправленные паттерны)
-    app.add_handler(CallbackQueryHandler(test_logs, pattern="^test_logs$"))
-    app.add_handler(CallbackQueryHandler(test_banks, pattern="^test_banks$"))
-    app.add_handler(CallbackQueryHandler(test_bank_quantity, pattern="^test_bank_"))
-    app.add_handler(CallbackQueryHandler(test_buy_logs, pattern="^test_buy_logs_[0-9]+$"))
-    app.add_handler(CallbackQueryHandler(test_buy_banks, pattern="^test_buy_banks_[0-9]+$"))
     
     # Покупки
     app.add_handler(CallbackQueryHandler(buy_logs, pattern="^buy_logs_[0-9]+$"))
@@ -1571,6 +1436,11 @@ def main():
     app.add_handler(CallbackQueryHandler(contacts, pattern="contacts"))
     app.add_handler(CallbackQueryHandler(checkout, pattern="checkout"))
     app.add_handler(CallbackQueryHandler(check_payment_callback, pattern="^check_[0-9]+$"))
+    
+    # Донат
+    app.add_handler(CallbackQueryHandler(donate, pattern="^donate$"))
+    app.add_handler(CallbackQueryHandler(donate_amount, pattern="^donate_[0-9.]+$"))
+    app.add_handler(CallbackQueryHandler(check_donate_callback, pattern="^check_donate_[0-9]+$"))
     
     logger.info("🚀 Бот запускается...")
     app.run_polling()

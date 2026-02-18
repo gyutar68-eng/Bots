@@ -22,10 +22,58 @@ CHANNEL_ID = os.getenv("CHANNEL_ID")
 CHANNEL_URL = os.getenv("CHANNEL_URL", f"https://t.me/{CHANNEL_ID.replace('@', '')}")
 CP_TOKEN = os.getenv("CP_TOKEN")  # Токен от Crypto Bot
 
+# Запасной курс USDT/RUB (если API недоступно)
+DEFAULT_USDT_RATE = 90.0
+
 if not TOKEN:
     raise ValueError("❌ НЕТ BOT_TOKEN В ОКРУЖЕНИИ!")
 if not CP_TOKEN:
     logger.warning("⚠️ CP_TOKEN не найден! Оплата криптовалютой не будет работать")
+
+# ============================================
+# КЭШ ДЛЯ КУРСА ВАЛЮТ
+# ============================================
+cached_rate = None
+last_rate_update = 0
+
+async def get_usdt_rate():
+    """Получает актуальный курс USDT к RUB с CoinGecko"""
+    global cached_rate, last_rate_update
+    
+    # Если курс уже получали меньше часа назад - используем кэш
+    if cached_rate and (datetime.now().timestamp() - last_rate_update) < 3600:
+        return cached_rate
+    
+    try:
+        # CoinGecko API (бесплатно, без ключа)
+        url = "https://api.coingecko.com/api/v3/simple/price?ids=tether&vs_currencies=rub"
+        
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, timeout=10) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    rate = data.get("tether", {}).get("rub")
+                    if rate:
+                        cached_rate = rate
+                        last_rate_update = datetime.now().timestamp()
+                        logger.info(f"Курс USDT/RUB: {rate}")
+                        return rate
+                    else:
+                        logger.error(f"Не удалось получить курс: {data}")
+                else:
+                    logger.error(f"HTTP {resp.status}")
+    except Exception as e:
+        logger.error(f"Ошибка получения курса: {e}")
+    
+    # Если не удалось получить курс - используем запасной
+    return DEFAULT_USDT_RATE
+
+async def rub_to_usdt(rub_amount):
+    """Конвертирует рубли в USDT"""
+    rate = await get_usdt_rate()
+    usdt_amount = rub_amount / rate
+    # Округляем до 2 знаков (для USDT)
+    return round(usdt_amount, 2)
 
 # ============================================
 # РАЗДЕЛЫ FAQ
@@ -586,10 +634,10 @@ async def send_product_file(update, context, user_id, file_path):
         return False
 
 # ============================================
-# ИСПРАВЛЕННЫЙ ОБРАБОТЧИК ОФОРМЛЕНИЯ ЗАКАЗА
+# ОФОРМЛЕНИЕ ЗАКАЗА (ТОЛЬКО КРИПТА)
 # ============================================
 async def checkout(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Оформление заказа с криптооплатой (ИСПРАВЛЕНО)"""
+    """Оформление заказа с криптооплатой (с конвертацией RUB → USDT)"""
     query = update.callback_query
     await query.answer()
     
@@ -605,26 +653,29 @@ async def checkout(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
     
-    total = sum(item['price'] for item in user_cart)
+    total_rub = sum(item['price'] for item in user_cart)
     
     if not CP_TOKEN:
         await query.edit_message_text(
-            f"✅ ЗАКАЗ ГОТОВ (без оплаты)\n\n"
-            f"Сумма: {total} ₽\n"
-            f"Товары: {len(user_cart)} позиций\n\n"
-            f"CP_TOKEN не настроен, поэтому товар выдаётся бесплатно.",
+            f"❌ Оплата временно недоступна\n\n"
+            f"Сумма: {total_rub} ₽\n"
+            f"Пожалуйста, попробуйте позже.",
             reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton("✅ Получить товар", callback_data="get_free")
+                InlineKeyboardButton("◀️ Назад", callback_data="cart")
             ]])
         )
         return
     
-    # СОЗДАЁМ СЧЁТ - ТЕПЕРЬ ПЕРЕДАЁМ context
+    # Конвертируем рубли в USDT
+    usdt_amount = await rub_to_usdt(total_rub)
+    current_rate = await get_usdt_rate()
+    
+    # СОЗДАЁМ СЧЁТ В USDT
     invoice = await create_crypto_invoice(
-        amount=total,
-        description=f"Покупка {len(user_cart)} товаров",
+        amount=usdt_amount,
+        description=f"Покупка {len(user_cart)} товаров на {total_rub} RUB",
         user_id=user_id,
-        context=context  # ВАЖНО: передаём context
+        context=context
     )
     
     if invoice and invoice.get("pay_url"):
@@ -635,7 +686,9 @@ async def checkout(update: Update, context: ContextTypes.DEFAULT_TYPE):
         payment_info = {
             "invoice_id": invoice["invoice_id"],
             "pay_url": invoice["pay_url"],
-            "amount": total,
+            "amount_rub": total_rub,
+            "amount_usdt": usdt_amount,
+            "rate": current_rate,
             "cart": user_cart.copy(),
             "status": "pending"
         }
@@ -650,8 +703,10 @@ async def checkout(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         await query.edit_message_text(
             f"💳 ОПЛАТА КРИПТОВАЛЮТОЙ\n\n"
-            f"Сумма: {total} USDT\n"
-            f"Товаров: {len(user_cart)} шт\n\n"
+            f"💰 Сумма в RUB: {total_rub} ₽\n"
+            f"💵 Сумма в USDT: {usdt_amount} USDT\n"
+            f"📊 Курс: 1 USDT = {current_rate:.2f} ₽\n"
+            f"📦 Товаров: {len(user_cart)} шт\n\n"
             f"1. Нажми кнопку ОПЛАТИТЬ\n"
             f"2. Оплати через Crypto Bot\n"
             f"3. Нажми «Я ОПЛАТИЛ»\n\n"
@@ -667,7 +722,7 @@ async def checkout(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 # ============================================
-# ОБРАБОТЧИК ПРОВЕРКИ ОПЛАТЫ
+# ПРОВЕРКА ОПЛАТЫ
 # ============================================
 async def check_payment_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -704,7 +759,9 @@ async def check_payment_callback(update: Update, context: ContextTypes.DEFAULT_T
         orders[user_id].append({
             "order_id": order_id,
             "items": payment_info["cart"],
-            "total": payment_info["amount"],
+            "total_rub": payment_info["amount_rub"],
+            "total_usdt": payment_info["amount_usdt"],
+            "rate": payment_info.get("rate", "?"),
             "status": "Оплачен",
             "date": datetime.now().isoformat()
         })
@@ -729,41 +786,7 @@ async def check_payment_callback(update: Update, context: ContextTypes.DEFAULT_T
     elif status == "active":
         await query.answer("⏳ Платёж создан, но ещё не оплачен", show_alert=True)
     else:
-        await query.answer("❌ Платёж не найден или просрочен", show_alert=True)
-
-# ============================================
-# ТЕСТОВАЯ ВЫДАЧА (БЕЗ ОПЛАТЫ)
-# ============================================
-async def get_free(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    
-    user_id = query.from_user.id
-    user_cart = carts.get(user_id, [])
-    
-    if not user_cart:
-        await query.edit_message_text("❌ Корзина пуста")
-        return
-    
-    order_id = len(orders.get(user_id, [])) + 1
-    
-    await query.edit_message_text("✅ Товар формируется...")
-    
-    files_sent = 0
-    for item in user_cart:
-        file_path = await generate_product_file(user_id, item, order_id)
-        if await send_product_file(update, context, user_id, file_path):
-            files_sent += 1
-    
-    carts[user_id] = []
-    
-    await context.bot.send_message(
-        chat_id=user_id,
-        text=f"✅ Заказ #{order_id} выполнен!\nОтправлено файлов: {files_sent}",
-        reply_markup=InlineKeyboardMarkup([[
-            InlineKeyboardButton("📦 В каталог", callback_data="catalog")
-        ]])
-    )
+        await query.answer("❌ Платёж не найдён или просрочен", show_alert=True)
 
 # ============================================
 # ИСТОРИЯ ЗАКАЗОВ
@@ -780,7 +803,9 @@ async def orders_history(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         text = "📦 ИСТОРИЯ ЗАКАЗОВ:\n\n"
         for order in user_orders[-5:]:
-            text += f"Заказ #{order['order_id']} - {order['total']} USDT\n"
+            text += f"Заказ #{order['order_id']}\n"
+            text += f"💰 {order['total_rub']} ₽ ({order['total_usdt']} USDT)\n"
+            text += f"📊 Курс: {order.get('rate', '?')} ₽/USDT\n"
             for item in order['items']:
                 text += f"  • {item['product_name']} {item['quantity']} шт\n"
             text += f"Статус: {order['status']}\n"
@@ -857,7 +882,6 @@ def main():
     app.add_handler(CallbackQueryHandler(contacts, pattern="contacts"))
     app.add_handler(CallbackQueryHandler(checkout, pattern="checkout"))
     app.add_handler(CallbackQueryHandler(check_payment_callback, pattern="^check_payment_[0-9]+$"))
-    app.add_handler(CallbackQueryHandler(get_free, pattern="get_free"))
     
     # Обработчики покупок
     app.add_handler(CallbackQueryHandler(buy_logs, pattern="^buy_logs_[0-9]+$"))

@@ -426,7 +426,6 @@ async def catalog(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "• 3 шт - 4500 ₽\n"
         "• 5 шт - 7500 ₽\n"
         "• 10 шт - 15000 ₽\n\n"
-        "После оплаты вы получите PDF файл с 200 записями.",
         reply_markup=reply_markup
     )
 

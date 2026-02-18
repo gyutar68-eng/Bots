@@ -7,10 +7,15 @@ import uuid
 from datetime import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
+import csv
+from io import StringIO
+from reportlab.pdfgen import canvas
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.units import mm
 
 # Настройка логирования
 logging.basicConfig(
-    format='%(as)s - %(name)s - %(levelname)s - %(message)s',
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
@@ -26,6 +31,142 @@ DEFAULT_USDT_RATE = 90.0
 
 if not TOKEN:
     raise ValueError("❌ НЕТ BOT_TOKEN В ОКРУЖЕНИИ!")
+
+# ============================================
+# ЛОГИ ДАННЫЕ (200 записей)
+# ============================================
+LOGS_DATA = """Ivanov Ivan Ivanovich,+79101000000,01.01.1950,000001
+Petrov Anna Ivanovna,+79111000001,02.01.1951,000002
+Sidorov Sergey Sergeevich,+79121000002,03.01.1952,000003
+Smirnov Olga Sergeevna,+79131000003,04.01.1953,000004
+Kuznetsov Dmitriy Dmitrievich,+79141000004,05.01.1954,000005
+Popov Natalia Dmitrievna,+79151000005,06.01.1955,000006
+Vasiliev Alexey Alexeevich,+79161000006,07.01.1956,000007
+Sokolov Elena Alexeevna,+79171000007,08.01.1957,000008
+Mikhailov Andrey Andreevich,+79181000008,09.01.1958,000009
+Fedorov Irina Andreevna,+79191000009,10.01.1959,000010
+Morozov Mikhail Mikhailovich,+79201000010,11.01.1960,000011
+Volkov Maria Mikhailovna,+79211000011,12.01.1961,000012
+Lebedev Nikolay Nikolaevich,+79221000012,13.01.1962,000013
+Novikov Ekaterina Nikolaevna,+79231000013,14.01.1963,000014
+Orlov Vladimir Vladimirovich,+79241000014,15.01.1964,000015
+Pavlov Tatiana Vladimirovna,+79251000015,16.01.1965,000016
+Vinogradov Oleg Olegovich,+79261000016,17.01.1966,000017
+Bogdanov Svetlana Olegovna,+79271000017,18.01.1967,000018
+Solovyov Yury Yurievich,+79281000018,19.01.1968,000019
+Romanov Marina Yurievna,+79291000019,20.01.1969,000020
+Ivanov Ivan Ivanovich,+79101000020,21.01.1970,000021
+Petrov Anna Ivanovna,+79111000021,22.01.1971,000022
+Sidorov Sergey Sergeevich,+79121000022,23.01.1972,000023
+Smirnov Olga Sergeevna,+79131000023,24.01.1973,000024
+Kuznetsov Dmitriy Dmitrievich,+79141000024,25.01.1974,000025
+Popov Natalia Dmitrievna,+79151000025,26.01.1975,000026
+Vasiliev Alexey Alexeevich,+79161000026,27.01.1976,000027
+Sokolov Elena Alexeevna,+79171000027,28.01.1977,000028
+Mikhailov Andrey Andreevich,+79181000028,01.02.1978,000029
+Fedorov Irina Andreevna,+79191000029,02.02.1979,000030
+Morozov Mikhail Mikhailovich,+79201000030,03.02.1980,000031
+Volkov Maria Mikhailovna,+79211000031,04.02.1981,000032
+Lebedev Nikolay Nikolaevich,+79221000032,05.02.1982,000033
+Novikov Ekaterina Nikolaevna,+79231000033,06.02.1983,000034
+Orlov Vladimir Vladimirovich,+79241000034,07.02.1984,000035
+Pavlov Tatiana Vladimirovna,+79251000035,08.02.1985,000036
+Vinogradov Oleg Olegovich,+79261000036,09.02.1986,000037
+Bogdanov Svetlana Olegovna,+79271000037,10.02.1987,000038
+Solovyov Yury Yurievich,+79281000038,11.02.1988,000039
+Romanov Marina Yurievna,+79291000039,12.02.1989,000040
+Ivanov Ivan Ivanovich,+79101000040,13.02.1990,000041
+Petrov Anna Ivanovna,+79111000041,14.02.1991,000042
+Sidorov Sergey Sergeevich,+79121000042,15.02.1992,000043
+Smirnov Olga Sergeevna,+79131000043,16.02.1993,000044
+Kuznetsov Dmitriy Dmitrievich,+79141000044,17.02.1994,000045
+Popov Natalia Dmitrievna,+79151000045,18.02.1995,000046
+Vasiliev Alexey Alexeevich,+79161000046,19.02.1996,000047
+Sokolov Elena Alexeevna,+79171000047,20.02.1997,000048
+Mikhailov Andrey Andreevich,+79181000048,21.02.1998,000049
+Fedorov Irina Andreevna,+79191000049,22.02.1999,000050
+Morozov Mikhail Mikhailovich,+79201000050,23.02.2000,000051
+Volkov Maria Mikhailovna,+79211000051,24.02.2001,000052
+Lebedev Nikolay Nikolaevich,+79221000052,25.02.2002,000053
+Novikov Ekaterina Nikolaevna,+79231000053,26.02.2003,000054
+Orlov Vladimir Vladimirovich,+79241000054,27.02.2004,000055
+Pavlov Tatiana Vladimirovna,+79251000055,28.02.1950,000056
+Vinogradov Oleg Olegovich,+79261000056,01.03.1951,000057
+Bogdanov Svetlana Olegovna,+79271000057,02.03.1952,000058
+Solovyov Yury Yurievich,+79281000058,03.03.1953,000059
+Romanov Marina Yurievna,+79291000059,04.03.1954,000060
+Ivanov Ivan Ivanovich,+79101000060,05.03.1955,000061
+Petrov Anna Ivanovna,+79111000061,06.03.1956,000062
+Sidorov Sergey Sergeevich,+79121000062,07.03.1957,000063
+Smirnov Olga Sergeevna,+79131000063,08.03.1958,000064
+Kuznetsov Dmitriy Dmitrievich,+79141000064,09.03.1959,000065
+Popov Natalia Dmitrievna,+79151000065,10.03.1960,000066
+Vasiliev Alexey Alexeevich,+79161000066,11.03.1961,000067
+Pavlov Tatiana Vladimirovna,+79251000135,22.05.1975,000136
+Vinogradov Oleg Olegovich,+79261000136,23.05.1976,000137
+Bogdanov Svetlana Olegovna,+79271000137,24.05.1977,000138
+Solovyov Yury Yurievich,+79281000138,25.05.1978,000139
+Romanov Marina Yurievna,+79291000139,26.05.1979,000140
+Ivanov Ivan Ivanovich,+79101000140,27.05.1980,000141
+Petrov Anna Ivanovna,+79111000141,28.05.1981,000142
+Sidorov Sergey Sergeevich,+79121000142,29.05.1982,000143
+Smirnov Olga Sergeevna,+79131000143,30.05.1983,000144
+Kuznetsov Dmitriy Dmitrievich,+79141000144,31.05.1984,000145
+Popov Natalia Dmitrievna,+79151000145,01.06.1985,000146
+Vasiliev Alexey Alexeevich,+79161000146,02.06.1986,000147
+Sokolov Elena Alexeevna,+79171000147,03.06.1987,000148
+Mikhailov Andrey Andreevich,+79181000148,04.06.1988,000149
+Fedorov Irina Andreevna,+79191000149,05.06.1989,000150
+Morozov Mikhail Mikhailovich,+79201000150,06.06.1990,000151
+Volkov Maria Mikhailovna,+79211000151,07.06.1991,000152
+Lebedev Nikolay Nikolaevich,+79221000152,08.06.1992,000153
+Novikov Ekaterina Nikolaevna,+79231000153,09.06.1993,000154
+Orlov Vladimir Vladimirovich,+79241000154,10.06.1994,000155
+Pavlov Tatiana Vladimirovna,+79251000155,11.06.1995,000156
+Vinogradov Oleg Olegovich,+79261000156,12.06.1996,000157
+Bogdanov Svetlana Olegovna,+79271000157,13.06.1997,000158
+Solovyov Yury Yurievich,+79281000158,14.06.1998,000159
+Romanov Marina Yurievna,+79291000159,15.06.1999,000160
+Ivanov Ivan Ivanovich,+79101000160,16.06.2000,000161
+Petrov Anna Ivanovna,+79111000161,17.06.2001,000162
+Sidorov Sergey Sergeevich,+79121000162,18.06.1950,000163
+Smirnov Olga Sergeevna,+79131000163,19.06.1951,000164
+Kuznetsov Dmitriy Dmitrievich,+79141000164,20.06.1952,000165
+Popov Natalia Dmitrievna,+79151000165,21.06.1953,000166
+Vasiliev Alexey Alexeevich,+79161000166,22.06.1954,000167
+Sokolov Elena Alexeevna,+79171000167,23.06.1955,000168
+Mikhailov Andrey Andreevich,+79181000168,24.06.1956,000169
+Fedorov Irina Andreevna,+79191000169,25.06.1957,000170
+Morozov Mikhail Mikhailovich,+79201000170,26.06.1958,000171
+Volkov Maria Mikhailovna,+79211000171,27.06.1959,000172
+Lebedev Nikolay Nikolaevich,+79221000172,28.06.1960,000173
+Novikov Ekaterina Nikolaevna,+79231000173,29.06.1961,000174
+Orlov Vladimir Vladimirovich,+79241000174,30.06.1962,000175
+Pavlov Tatiana Vladimirovna,+79251000175,01.07.1963,000176
+Vinogradov Oleg Olegovich,+79261000176,02.07.1964,000177
+Bogdanov Svetlana Olegovna,+79271000177,03.07.1965,000178
+Solovyov Yury Yurievich,+79281000178,04.07.1966,000179
+Romanov Marina Yurievna,+79291000179,05.07.1967,000180
+Ivanov Ivan Ivanovich,+79101000180,06.07.1968,000181
+Petrov Anna Ivanovna,+79111000181,07.07.1969,000182
+Sidorov Sergey Sergeevich,+79121000182,08.07.1970,000183
+Smirnov Olga Sergeevna,+79131000183,09.07.1971,000184
+Kuznetsov Dmitriy Dmitrievich,+79141000184,10.07.1972,000185
+Popov Natalia Dmitrievna,+79151000185,11.07.1973,000186
+Vasiliev Alexey Alexeevich,+79161000186,12.07.1974,000187
+Sokolov Elena Alexeevna,+79171000187,13.07.1975,000188
+Mikhailov Andrey Andreevich,+79181000188,14.07.1976,000189
+Fedorov Irina Andreevna,+79191000189,15.07.1977,000190
+Morozov Mikhail Mikhailovich,+79201000190,16.07.1978,000191
+Volkov Maria Mikhailovna,+79211000191,17.07.1979,000192
+Lebedev Nikolay Nikolaevich,+79221000192,18.07.1980,000193
+Novikov Ekaterina Nikolaevna,+79231000193,19.07.1981,000194
+Orlov Vladimir Vladimirovich,+79241000194,20.07.1982,000195
+Pavlov Tatiana Vladimirovna,+79251000195,21.07.1983,000196
+Vinogradov Oleg Olegovich,+79261000196,22.07.1984,000197
+Bogdanov Svetlana Olegovna,+79271000197,23.07.1985,000198
+Solovyov Yury Yurievich,+79281000198,24.07.1986,000199
+Romanov Marina Yurievna,+79291000199,25.07.1987,000200"""
 
 # ============================================
 # КЭШ ДЛЯ КУРСА ВАЛЮТ
@@ -67,12 +208,12 @@ async def rub_to_usdt(rub_amount):
 # РАЗДЕЛЫ FAQ
 # ============================================
 FAQ_SECTIONS = [
-    {"id": 1, "name": "О сервисе", "content": "ℹ️ О СЕРВИСЕ\n\nМы - лучший магазин в Telegram. Работаем с 2024 года."},
-    {"id": 2, "name": "Что такое подтверждённая УЗ", "content": "🔐 ПОДТВЕРЖДЁННАЯ УЧЁТНАЯ ЗАПИСЬ\n\nЭто аккаунт, который прошёл верификацию."},
-    {"id": 3, "name": "Гарантии", "content": "🛡 ГАРАНТИИ\n\nМы гарантируем возврат средств при проблемах."},
-    {"id": 4, "name": "Репутация", "content": "⭐ РЕПУТАЦИЯ\n\nУ нас более 1000 положительных отзывов."},
-    {"id": 5, "name": "Правила безопасности", "content": "🔒 ПРАВИЛА БЕЗОПАСНОСТИ\n\n1. Никому не передавайте код подтверждения"},
-    {"id": 6, "name": "Поддержка", "content": "📞 ПОДДЕРЖКА\n\nПо всем вопросам: @support"}
+    {"id": 1, "name": "О сервисе", "content": "ℹ️ О СЕРВИСЕ\n\nМы - лучший магазин логов в Telegram. Работаем с 2024 года."},
+    {"id": 2, "name": "Что такое логи", "content": "📊 ЧТО ТАКОЕ ЛОГИ\n\nЭто база данных с персональными данными.\n\n✅ ФИО\n✅ Телефоны\n✅ Даты рождения\n✅ Уникальные ID"},
+    {"id": 3, "name": "Гарантии", "content": "🛡 ГАРАНТИИ\n\nМы гарантируем:\n✅ Актуальность данных\n✅ Рабочие номера\n✅ Возврат при проблемах"},
+    {"id": 4, "name": "Репутация", "content": "⭐ РЕПУТАЦИЯ\n\n✅ Более 500 довольных клиентов\n✅ Работаем с 2024\n✅ Проверенный магазин"},
+    {"id": 5, "name": "Правила безопасности", "content": "🔒 ПРАВИЛА БЕЗОПАСНОСТИ\n\n1. Никому не передавайте данные\n2. Используйте только в законных целях\n3. Поддержка @shoplogs24support"},
+    {"id": 6, "name": "Поддержка", "content": "📞 ПОДДЕРЖКА\n\nПо всем вопросам: @shoplogs24support\n\nВремя работы: 24/7"}
 ]
 
 # ============================================
@@ -80,20 +221,10 @@ FAQ_SECTIONS = [
 # ============================================
 PRODUCTS = {
     "logs": {
-        "name": "📦 Логи",
-        "stock": 2250,
+        "name": "📦 Логи (200 записей)",
+        "stock": 999999,  # Бесконечно
         "prices": {
-            1: 1500,
-            3: 4500,
-            5: 7500,
-            10: 15000
-        }
-    },
-    "test": {
-        "name": "🧪 Тестовый товар",
-        "stock": 999999,
-        "prices": {
-            1: 9  # Теперь примерно 0.1 USDT
+            1: 1500  # Одна единица товара = 200 записей
         }
     }
 }
@@ -281,133 +412,38 @@ async def catalog(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     
     keyboard = [
-        [InlineKeyboardButton(f"📦 Логи (в наличии: {PRODUCTS['logs']['stock']} шт)", callback_data="category_logs")],
-        [InlineKeyboardButton(f"🧪 Тестовый товар (9 ₽)", callback_data="category_test")],
+        [InlineKeyboardButton(f"📦 Логи (200 записей) - 1500 ₽", callback_data="buy_logs_1")],
         [InlineKeyboardButton("◀️ Назад", callback_data="back_to_menu")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     await query.edit_message_text(
-        "🛍 Каталог товаров\n\nВыберите категорию:",
+        "🛍 Каталог товаров\n\n"
+        "📦 Логи - 200 записей\n"
+        "💰 Цена: 1500 ₽\n\n"
+        "После оплаты вы получите PDF файл с данными.",
         reply_markup=reply_markup
     )
 
 # ============================================
-# КАТЕГОРИЯ "ЛОГИ"
-# ============================================
-async def category_logs(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    
-    product = PRODUCTS["logs"]
-    
-    keyboard = [
-        [InlineKeyboardButton("1 шт - 1500 ₽", callback_data="buy_logs_1")],
-        [InlineKeyboardButton("3 шт - 4500 ₽", callback_data="buy_logs_3")],
-        [InlineKeyboardButton("5 шт - 7500 ₽", callback_data="buy_logs_5")],
-        [InlineKeyboardButton("10 шт - 15000 ₽", callback_data="buy_logs_10")],
-        [InlineKeyboardButton("◀️ Назад к каталогу", callback_data="catalog")]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    await query.edit_message_text(
-        f"📦 Логи\n\n"
-        f"В наличии: {product['stock']} шт\n\n"
-        f"Выберите количество:",
-        reply_markup=reply_markup
-    )
-
-# ============================================
-# КАТЕГОРИЯ "ТЕСТОВЫЙ ТОВАР"
-# ============================================
-async def category_test(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    
-    product = PRODUCTS["test"]
-    
-    keyboard = [
-        [InlineKeyboardButton("1 шт - 9 ₽ (≈0.1 USDT)", callback_data="buy_test_1")],
-        [InlineKeyboardButton("◀️ Назад к каталогу", callback_data="catalog")]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    await query.edit_message_text(
-        f"🧪 Тестовый товар\n\n"
-        f"💰 Цена: 9 ₽ (примерно 0.1 USDT)\n\n"
-        f"Минимальная сумма для оплаты в USDT",
-        reply_markup=reply_markup
-    )
-
-# ============================================
-# ПОКУПКА ТОВАРА (ЛОГИ)
+# ПОКУПКА ТОВАРА
 # ============================================
 async def buy_logs(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     
-    quantity = int(query.data.split("_")[2])
-    product = PRODUCTS["logs"]
-    price = product["prices"][quantity]
-    
-    if product["stock"] < quantity:
-        await query.edit_message_text(
-            f"❌ Недостаточно товара в наличии!\n"
-            f"Доступно: {product['stock']} шт",
-            reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton("◀️ Назад", callback_data="category_logs")
-            ]])
-        )
-        return
-    
     user_id = query.from_user.id
+    
+    # Добавляем товар в корзину (один товар = 200 записей)
     if user_id not in carts:
         carts[user_id] = []
     
     cart_item = {
         "category": "logs",
-        "product_name": product["name"],
-        "quantity": quantity,
-        "price": price,
-        "total": price
-    }
-    carts[user_id].append(cart_item)
-    
-    product["stock"] -= quantity
-    
-    keyboard = [
-        [InlineKeyboardButton("🛒 Перейти в корзину", callback_data="cart")],
-        [InlineKeyboardButton("📦 Продолжить покупки", callback_data="category_logs")]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    await query.edit_message_text(
-        f"✅ Товар добавлен в корзину!\n\n"
-        f"📦 {product['name']} {quantity} шт\n"
-        f"💰 Сумма: {price} ₽",
-        reply_markup=reply_markup
-    )
-
-# ============================================
-# ПОКУПКА ТЕСТОВОГО ТОВАРА
-# ============================================
-async def buy_test(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    
-    product = PRODUCTS["test"]
-    price = product["prices"][1]
-    
-    user_id = query.from_user.id
-    if user_id not in carts:
-        carts[user_id] = []
-    
-    cart_item = {
-        "category": "test",
-        "product_name": product["name"],
+        "product_name": PRODUCTS["logs"]["name"],
         "quantity": 1,
-        "price": price,
-        "total": price
+        "price": 1500,
+        "total": 1500
     }
     carts[user_id].append(cart_item)
     
@@ -418,8 +454,9 @@ async def buy_test(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     await query.edit_message_text(
-        f"✅ Тестовый товар добавлен в корзину!\n\n"
-        f"💰 Сумма: {price} ₽",
+        f"✅ Товар добавлен в корзину!\n\n"
+        f"📦 Логи (200 записей)\n"
+        f"💰 Сумма: 1500 ₽",
         reply_markup=reply_markup
     )
 
@@ -441,31 +478,27 @@ async def show_cart_with_delete(update: Update, context: ContextTypes.DEFAULT_TY
     total = 0
     cart_text = "🛒 ВАША КОРЗИНА:\n\n"
     
-    # Создаём клавиатуру с товарами и кнопками удаления
     keyboard = []
     
     for i, item in enumerate(user_cart):
-        cart_text += f"{i+1}. {item['product_name']} {item['quantity']} шт - {item['price']} ₽\n"
+        cart_text += f"{i+1}. {item['product_name']} - {item['price']} ₽\n"
         total += item['price']
         
-        # Кнопка удаления для каждого товара
         keyboard.append([InlineKeyboardButton(
-            f"❌ Удалить {item['product_name']} {item['quantity']} шт",
+            f"❌ Удалить",
             callback_data=f"remove_{i}"
         )])
     
     cart_text += f"\n💰 ИТОГО: {total} ₽"
     
-    # Кнопки действий
     keyboard.append([InlineKeyboardButton("✅ Оформить заказ", callback_data="checkout")])
-    keyboard.append([InlineKeyboardButton("📦 Продолжить покупки", callback_data="catalog")])
+    keyboard.append([InlineKeyboardButton("📦 В каталог", callback_data="catalog")])
     
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     await update.callback_query.edit_message_text(cart_text, reply_markup=reply_markup)
 
 async def cart(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Показывает корзину с возможностью удаления"""
     query = update.callback_query
     await query.answer()
     
@@ -476,7 +509,6 @@ async def cart(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # УДАЛЕНИЕ ТОВАРА ИЗ КОРЗИНЫ
 # ============================================
 async def remove_from_cart(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Удаляет товар из корзины"""
     query = update.callback_query
     await query.answer()
     
@@ -484,8 +516,8 @@ async def remove_from_cart(update: Update, context: ContextTypes.DEFAULT_TYPE):
     item_index = int(query.data.split("_")[1])
     
     if user_id in carts and 0 <= item_index < len(carts[user_id]):
-        removed_item = carts[user_id].pop(item_index)
-        logger.info(f"Пользователь {user_id} удалил {removed_item['product_name']} из корзины")
+        carts[user_id].pop(item_index)
+        logger.info(f"Пользователь {user_id} удалил товар из корзины")
         await show_cart_with_delete(update, context, user_id)
     else:
         await query.edit_message_text(
@@ -496,10 +528,69 @@ async def remove_from_cart(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 # ============================================
+# ФУНКЦИЯ СОЗДАНИЯ PDF С ЛОГАМИ
+# ============================================
+async def generate_logs_pdf(user_id, order_id):
+    """Генерирует PDF файл с логами"""
+    os.makedirs("products", exist_ok=True)
+    
+    filename = f"products/logs_{order_id}_{user_id}.pdf"
+    
+    c = canvas.Canvas(filename, pagesize=A4)
+    width, height = A4
+    
+    # Заголовок
+    c.setFont("Helvetica-Bold", 16)
+    c.drawString(30 * mm, height - 20 * mm, f"ЛОГИ - Заказ #{order_id}")
+    
+    c.setFont("Helvetica", 10)
+    c.drawString(30 * mm, height - 30 * mm, f"Дата: {datetime.now().strftime('%d.%m.%Y %H:%M:%S')}")
+    c.drawString(30 * mm, height - 35 * mm, f"Покупатель ID: {user_id}")
+    
+    # Разбираем логи
+    lines = LOGS_DATA.strip().split('\n')
+    
+    y = height - 50 * mm
+    line_height = 5 * mm
+    
+    c.setFont("Helvetica-Bold", 10)
+    c.drawString(10 * mm, y, "ФИО")
+    c.drawString(60 * mm, y, "Телефон")
+    c.drawString(110 * mm, y, "Дата рождения")
+    c.drawString(160 * mm, y, "ID")
+    
+    y -= line_height * 2
+    c.setFont("Helvetica", 8)
+    
+    for i, line in enumerate(lines[:200]):  # Все 200 записей
+        parts = line.split(',')
+        if len(parts) == 4:
+            name, phone, birth, uid = parts
+            
+            c.drawString(10 * mm, y, name[:30] + "..." if len(name) > 30 else name)
+            c.drawString(60 * mm, y, phone)
+            c.drawString(110 * mm, y, birth)
+            c.drawString(160 * mm, y, uid)
+            
+            y -= line_height
+            
+            # Новая страница если нужно
+            if y < 20 * mm:
+                c.showPage()
+                y = height - 20 * mm
+                c.setFont("Helvetica-Bold", 16)
+                c.drawString(30 * mm, y, f"ЛОГИ - Заказ #{order_id} (продолжение)")
+                y -= 20 * mm
+                c.setFont("Helvetica", 8)
+    
+    c.save()
+    return filename
+
+# ============================================
 # УПРОЩЁННАЯ ФУНКЦИЯ СОЗДАНИЯ СЧЁТА
 # ============================================
 async def create_crypto_invoice(amount, description, user_id, context=None):
-    """Упрощённая версия создания счёта"""
+    """Создаёт счёт в Crypto Bot"""
     if not CP_TOKEN:
         logger.error("❌ НЕТ CP_TOKEN!")
         return None
@@ -652,19 +743,21 @@ async def checkout(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"📊 Курс: {current_rate:.2f} RUB/USDT\n\n"
             f"1. Нажми ОПЛАТИТЬ\n"
             f"2. Оплати в Crypto Bot\n"
-            f"3. Нажми «Я ОПЛАТИЛ»",
+            f"3. Нажми «Я ОПЛАТИЛ»\n\n"
+            f"После оплаты вы получите PDF файл с логами.",
             reply_markup=reply_markup
         )
     else:
         await query.edit_message_text(
-            "❌ Ошибка создания счёта.\n\nПопробуйте позже или обратитесь в поддержку.",
+            "❌ Ошибка создания счёта.\n\n"
+            "Попробуйте позже или обратитесь в поддержку @shoplogs24support",
             reply_markup=InlineKeyboardMarkup([[
                 InlineKeyboardButton("◀️ Назад", callback_data="cart")
             ]])
         )
 
 # ============================================
-# ПРОВЕРКА ОПЛАТЫ
+# ПРОВЕРКА ОПЛАТЫ И ВЫДАЧА PDF
 # ============================================
 async def check_payment_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -687,7 +780,7 @@ async def check_payment_callback(update: Update, context: ContextTypes.DEFAULT_T
     is_paid = await check_crypto_payment(invoice_id, user_id)
     
     if is_paid:
-        await query.edit_message_text("✅ Платёж подтверждён! Формируем товар...")
+        await query.edit_message_text("✅ Платёж подтверждён! Формируем PDF с логами...")
         
         order_id = len(orders.get(user_id, [])) + 1
         if user_id not in orders:
@@ -703,79 +796,34 @@ async def check_payment_callback(update: Update, context: ContextTypes.DEFAULT_T
             "date": datetime.now().isoformat()
         })
         
-        files_sent = 0
-        for item in payment_info["cart"]:
-            file_path = await generate_product_file(user_id, item, order_id)
-            if await send_product_file(update, context, user_id, file_path):
-                files_sent += 1
+        # Генерируем PDF
+        pdf_path = await generate_logs_pdf(user_id, order_id)
         
+        # Отправляем PDF
+        from telegram import FSInputFile
+        document = FSInputFile(pdf_path)
+        await context.bot.send_document(
+            chat_id=user_id,
+            document=document,
+            caption=f"✅ Ваш заказ #{order_id}\n\nЛоги (200 записей) в PDF формате.\n\nЕсли файл не открывается - обратитесь в поддержку @shoplogs24support"
+        )
+        
+        # Удаляем PDF после отправки
+        os.remove(pdf_path)
+        
+        # Очищаем корзину
         carts[user_id] = []
         context.user_data["pending_payments"].remove(payment_info)
         
         await context.bot.send_message(
             chat_id=user_id,
-            text=f"✅ Заказ выполнен!\nОтправлено файлов: {files_sent}",
+            text=f"✅ Заказ выполнен!\nФайл отправлен.",
             reply_markup=InlineKeyboardMarkup([[
                 InlineKeyboardButton("📦 В каталог", callback_data="catalog")
             ]])
         )
     else:
         await query.answer("⏳ Платёж не найден или не оплачен", show_alert=True)
-
-# ============================================
-# ФУНКЦИИ ДЛЯ РАБОТЫ С ФАЙЛАМИ
-# ============================================
-async def generate_product_file(user_id, item, order_id):
-    os.makedirs("products", exist_ok=True)
-    
-    filename = f"products/{item['product_name'].replace(' ', '_')}_{order_id}_{uuid.uuid4().hex[:8]}.txt"
-    
-    if item['category'] == 'test':
-        content = f"""🧪 ТЕСТОВЫЙ ТОВАР
-
-✅ Оплата прошла успешно!
-
-Заказ #{order_id}
-Дата: {datetime.now().strftime('%d.%m.%Y %H:%M:%S')}
-Покупатель: {user_id}
-
-Это тестовый файл. Оплата работает!
-"""
-    else:
-        content = f"""📦 ВАШ ТОВАР
-
-Заказ #{order_id}
-Товар: {item['product_name']}
-Количество: {item['quantity']} шт
-Дата: {datetime.now().strftime('%d.%m.%Y %H:%M:%S')}
-
-🔑 ДАННЫЕ:
-Логин: user_{user_id}
-Пароль: {uuid.uuid4().hex[:12]}
-Сервер: logs.example.com
-"""
-    
-    async with aiofiles.open(filename, 'w', encoding='utf-8') as f:
-        await f.write(content)
-    
-    return filename
-
-async def send_product_file(update, context, user_id, file_path):
-    try:
-        from telegram import FSInputFile
-        
-        document = FSInputFile(file_path)
-        await context.bot.send_document(
-            chat_id=user_id,
-            document=document,
-            caption="✅ Ваш товар готов!"
-        )
-        
-        os.remove(file_path)
-        return True
-    except Exception as e:
-        logger.error(f"Ошибка отправки файла: {e}")
-        return False
 
 # ============================================
 # ИСТОРИЯ ЗАКАЗОВ
@@ -794,8 +842,9 @@ async def orders_history(update: Update, context: ContextTypes.DEFAULT_TYPE):
         for order in user_orders[-5:]:
             text += f"Заказ #{order['order_id']} - {order['total_rub']} RUB\n"
             for item in order['items']:
-                text += f"  • {item['product_name']} {item['quantity']} шт\n"
-            text += f"Статус: {order['status']}\n\n"
+                text += f"  • {item['product_name']}\n"
+            text += f"Статус: {order['status']}\n"
+            text += f"Дата: {order.get('date', '')[:10]}\n\n"
     
     keyboard = [[InlineKeyboardButton("◀️ Назад", callback_data="back_to_menu")]]
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -813,7 +862,11 @@ async def about(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     await query.edit_message_text(
-        "ℹ️ О НАС\n\nЛучший магазин логов в Telegram",
+        "ℹ️ О НАС\n\n"
+        "✅ Лучший магазин логов в Telegram\n"
+        "✅ Более 200 записей\n"
+        "✅ Мгновенная выдача PDF\n"
+        "✅ Поддержка @shoplogs24support",
         reply_markup=reply_markup
     )
 
@@ -830,6 +883,7 @@ async def contacts(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.edit_message_text(
         "📞 КОНТАКТЫ\n\n"
         f"Канал: {CHANNEL_URL}\n"
+        "Поддержка: @shoplogs24support\n"
         "Время работы: 24/7",
         reply_markup=reply_markup
     )
@@ -855,8 +909,7 @@ def main():
     
     # Обработчики магазина
     app.add_handler(CallbackQueryHandler(catalog, pattern="catalog"))
-    app.add_handler(CallbackQueryHandler(category_logs, pattern="category_logs"))
-    app.add_handler(CallbackQueryHandler(category_test, pattern="category_test"))
+    app.add_handler(CallbackQueryHandler(buy_logs, pattern="^buy_logs_[0-9]+$"))
     app.add_handler(CallbackQueryHandler(cart, pattern="cart"))
     app.add_handler(CallbackQueryHandler(remove_from_cart, pattern="^remove_[0-9]+$"))
     app.add_handler(CallbackQueryHandler(orders_history, pattern="orders"))
@@ -864,10 +917,6 @@ def main():
     app.add_handler(CallbackQueryHandler(contacts, pattern="contacts"))
     app.add_handler(CallbackQueryHandler(checkout, pattern="checkout"))
     app.add_handler(CallbackQueryHandler(check_payment_callback, pattern="^check_[0-9]+$"))
-    
-    # Обработчики покупок
-    app.add_handler(CallbackQueryHandler(buy_logs, pattern="^buy_logs_[0-9]+$"))
-    app.add_handler(CallbackQueryHandler(buy_test, pattern="^buy_test_[0-9]+$"))
     
     logger.info("🚀 Бот запущен...")
     app.run_polling()

@@ -22,6 +22,12 @@ CHANNEL_ID = os.getenv("CHANNEL_ID")
 CHANNEL_URL = os.getenv("CHANNEL_URL", f"https://t.me/{CHANNEL_ID.replace('@', '')}")
 CP_TOKEN = os.getenv("CP_TOKEN")  # Токен от Crypto Bot
 
+# НАСТРОЙКИ ПРОКСИ (НОВОЕ!)
+USE_PROXY = os.getenv("USE_PROXY", "false").lower() == "true"
+PROXY_URL = os.getenv("PROXY_URL", "")  # Например: http://proxy.example.com:8080
+PROXY_LOGIN = os.getenv("PROXY_LOGIN", "")
+PROXY_PASSWORD = os.getenv("PROXY_PASSWORD", "")
+
 # Запасной курс USDT/RUB (если API недоступно)
 DEFAULT_USDT_RATE = 90.0
 
@@ -40,12 +46,10 @@ async def get_usdt_rate():
     """Получает актуальный курс USDT к RUB с CoinGecko"""
     global cached_rate, last_rate_update
     
-    # Если курс уже получали меньше часа назад - используем кэш
     if cached_rate and (datetime.now().timestamp() - last_rate_update) < 3600:
         return cached_rate
     
     try:
-        # CoinGecko API (бесплатно, без ключа)
         url = "https://api.coingecko.com/api/v3/simple/price?ids=tether&vs_currencies=rub"
         
         async with aiohttp.ClientSession() as session:
@@ -65,14 +69,12 @@ async def get_usdt_rate():
     except Exception as e:
         logger.error(f"Ошибка получения курса: {e}")
     
-    # Если не удалось получить курс - используем запасной
     return DEFAULT_USDT_RATE
 
 async def rub_to_usdt(rub_amount):
     """Конвертирует рубли в USDT"""
     rate = await get_usdt_rate()
     usdt_amount = rub_amount / rate
-    # Округляем до 2 знаков (для USDT)
     return round(usdt_amount, 2)
 
 # ============================================
@@ -101,11 +103,11 @@ PRODUCTS = {
             10: 15000
         }
     },
-    "test": {  # Проверочный товар за 1 рубль
+    "test": {
         "name": "🧪 Тестовый товар",
         "stock": 999999,
         "prices": {
-            1: 1  # 1 рубль
+            1: 1
         }
     }
 }
@@ -475,10 +477,10 @@ async def cart(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.edit_message_text(cart_text, reply_markup=reply_markup)
 
 # ============================================
-# ИСПРАВЛЕННАЯ ФУНКЦИЯ КРИПТООПЛАТЫ
+# ИСПРАВЛЕННАЯ ФУНКЦИЯ КРИПТООПЛАТЫ (С ПРОКСИ)
 # ============================================
 async def create_crypto_invoice(amount, description, user_id, context=None):
-    """Создаёт счёт в Crypto Bot (ИСПРАВЛЕНО: добавлен context)"""
+    """Создаёт счёт в Crypto Bot с поддержкой прокси"""
     if not CP_TOKEN:
         logger.error("❌ НЕТ CP_TOKEN!")
         return None
@@ -492,7 +494,7 @@ async def create_crypto_invoice(amount, description, user_id, context=None):
         "Content-Type": "application/json"
     }
     
-    # Получаем username бота, если есть context
+    # Получаем username бота
     bot_username = "your_bot_username"
     if context:
         try:
@@ -511,25 +513,58 @@ async def create_crypto_invoice(amount, description, user_id, context=None):
         "allow_anonymous": False
     }
     
+    # НАСТРОЙКА ПРОКСИ (НОВОЕ!)
+    connector = None
+    proxy_auth = None
+    
+    if USE_PROXY and PROXY_URL:
+        logger.info(f"Использую прокси: {PROXY_URL}")
+        if PROXY_LOGIN and PROXY_PASSWORD:
+            proxy_auth = aiohttp.BasicAuth(PROXY_LOGIN, PROXY_PASSWORD)
+    
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                f"{base_url}/createInvoice",
-                headers=headers,
-                json=payload,
-                timeout=30
-            ) as resp:
+        async with aiohttp.ClientSession(connector=connector) as session:
+            # Параметры запроса
+            kwargs = {
+                "url": f"{base_url}/createInvoice",
+                "headers": headers,
+                "json": payload,
+                "timeout": 30
+            }
+            
+            # Добавляем прокси если нужно
+            if USE_PROXY and PROXY_URL:
+                kwargs["proxy"] = PROXY_URL
+                if proxy_auth:
+                    kwargs["proxy_auth"] = proxy_auth
+            
+            async with session.post(**kwargs) as resp:
                 if resp.status == 200:
                     data = await resp.json()
                     if data.get("ok"):
+                        logger.info(f"✅ Счёт создан для user {user_id}, сумма {amount} USDT")
                         return data["result"]
                     else:
                         logger.error(f"Ошибка API: {data}")
                 else:
                     text = await resp.text()
-                    logger.error(f"HTTP {resp.status}: {text}")
+                    logger.error(f"HTTP {resp.status} для user {user_id}: {text}")
+                    
+                    # Детальная диагностика ошибки
+                    if resp.status == 401:
+                        logger.error("❌ Ошибка 401: Неверный токен Crypto Bot")
+                    elif resp.status == 403:
+                        logger.error("❌ Ошибка 403: Недостаточно прав. Включите createCheck и transfer")
+                    elif resp.status == 422:
+                        logger.error("❌ Ошибка 422: Неверные параметры запроса")
+    except aiohttp.ClientProxyConnectionError as e:
+        logger.error(f"❌ Ошибка подключения к прокси: {e}")
+    except aiohttp.ClientConnectorError as e:
+        logger.error(f"❌ Ошибка подключения к Crypto Bot: {e}")
+    except asyncio.TimeoutError:
+        logger.error(f"❌ Таймаут при запросе к Crypto Bot")
     except Exception as e:
-        logger.error(f"Ошибка создания счёта: {e}")
+        logger.error(f"❌ Неизвестная ошибка: {type(e).__name__}: {e}")
     
     return None
 
@@ -545,16 +580,23 @@ async def check_crypto_payment(invoice_id):
     base_url = "https://testnet-pay.crypt.bot/api" if is_testnet else "https://pay.crypt.bot/api"
     
     headers = {"Crypto-Pay-API-Token": CP_TOKEN}
-    
     params = {"invoice_ids": invoice_id}
     
     try:
         async with aiohttp.ClientSession() as session:
-            async with session.get(
-                f"{base_url}/getInvoices",
-                headers=headers,
-                params=params
-            ) as resp:
+            kwargs = {
+                "url": f"{base_url}/getInvoices",
+                "headers": headers,
+                "params": params,
+                "timeout": 30
+            }
+            
+            if USE_PROXY and PROXY_URL:
+                kwargs["proxy"] = PROXY_URL
+                if PROXY_LOGIN and PROXY_PASSWORD:
+                    kwargs["proxy_auth"] = aiohttp.BasicAuth(PROXY_LOGIN, PROXY_PASSWORD)
+            
+            async with session.get(**kwargs) as resp:
                 if resp.status == 200:
                     data = await resp.json()
                     if data.get("ok") and data.get("result", {}).get("items"):
@@ -582,7 +624,7 @@ async def generate_product_file(user_id, item, order_id):
 Дата: {datetime.now().strftime('%d.%m.%Y %H:%M:%S')}
 Покупатель: {user_id}
 
-Это тестовый файл. Если вы его получили - значит оплата через Crypto Bot работает правильно!
+Это тестовый файл. Если вы его получили - значит оплата работает!
 
 Спасибо за тестирование! 🎉
 """
@@ -637,7 +679,7 @@ async def send_product_file(update, context, user_id, file_path):
 # ОФОРМЛЕНИЕ ЗАКАЗА (ТОЛЬКО КРИПТА)
 # ============================================
 async def checkout(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Оформление заказа с криптооплатой (с конвертацией RUB → USDT)"""
+    """Оформление заказа с криптооплатой"""
     query = update.callback_query
     await query.answer()
     
@@ -714,8 +756,19 @@ async def checkout(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=reply_markup
         )
     else:
+        # Детальная ошибка для пользователя
+        error_msg = "❌ Ошибка создания счёта.\n\n"
+        
+        if not CP_TOKEN:
+            error_msg += "🔴 Не настроен токен Crypto Bot"
+        elif USE_PROXY and not PROXY_URL:
+            error_msg += "🔴 Включен прокси, но не указан PROXY_URL"
+        else:
+            error_msg += "🔴 Проверьте подключение к Crypto Bot.\n"
+            error_msg += "🔴 Если используете прокси - проверьте настройки."
+        
         await query.edit_message_text(
-            "❌ Ошибка создания счёта. Попробуйте позже.",
+            error_msg,
             reply_markup=InlineKeyboardMarkup([[
                 InlineKeyboardButton("◀️ Назад", callback_data="cart")
             ]])
@@ -725,6 +778,7 @@ async def checkout(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ПРОВЕРКА ОПЛАТЫ
 # ============================================
 async def check_payment_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Проверка оплаты с защитой"""
     query = update.callback_query
     await query.answer()
     
@@ -786,7 +840,9 @@ async def check_payment_callback(update: Update, context: ContextTypes.DEFAULT_T
     elif status == "active":
         await query.answer("⏳ Платёж создан, но ещё не оплачен", show_alert=True)
     else:
-        await query.answer("❌ Платёж не найдён или просрочен", show_alert=True)
+        await query.answer("❌ Платёж не найден или просрочен", show_alert=True)
+        if payment_info in context.user_data["pending_payments"]:
+            context.user_data["pending_payments"].remove(payment_info)
 
 # ============================================
 # ИСТОРИЯ ЗАКАЗОВ

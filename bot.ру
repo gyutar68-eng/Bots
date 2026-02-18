@@ -10,7 +10,7 @@ from telegram.ext import Application, CommandHandler, CallbackQueryHandler, Cont
 
 # Настройка логирования
 logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    format='%(as)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
@@ -93,7 +93,7 @@ PRODUCTS = {
         "name": "🧪 Тестовый товар",
         "stock": 999999,
         "prices": {
-            1: 1
+            1: 9  # Теперь примерно 0.1 USDT
         }
     }
 }
@@ -282,7 +282,7 @@ async def catalog(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     keyboard = [
         [InlineKeyboardButton(f"📦 Логи (в наличии: {PRODUCTS['logs']['stock']} шт)", callback_data="category_logs")],
-        [InlineKeyboardButton(f"🧪 Тестовый товар (1₽)", callback_data="category_test")],
+        [InlineKeyboardButton(f"🧪 Тестовый товар (9 ₽)", callback_data="category_test")],
         [InlineKeyboardButton("◀️ Назад", callback_data="back_to_menu")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -327,15 +327,15 @@ async def category_test(update: Update, context: ContextTypes.DEFAULT_TYPE):
     product = PRODUCTS["test"]
     
     keyboard = [
-        [InlineKeyboardButton("1 шт - 1 ₽", callback_data="buy_test_1")],
+        [InlineKeyboardButton("1 шт - 9 ₽ (≈0.1 USDT)", callback_data="buy_test_1")],
         [InlineKeyboardButton("◀️ Назад к каталогу", callback_data="catalog")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     await query.edit_message_text(
         f"🧪 Тестовый товар\n\n"
-        f"💰 Цена: 1 рубль\n\n"
-        f"После оплаты вы получите тестовый файл.",
+        f"💰 Цена: 9 ₽ (примерно 0.1 USDT)\n\n"
+        f"Минимальная сумма для оплаты в USDT",
         reply_markup=reply_markup
     )
 
@@ -528,30 +528,13 @@ async def create_crypto_invoice(amount, description, user_id, context=None):
                 if resp.status == 200:
                     data = await resp.json()
                     if data.get("ok"):
-                        logger.info(f"✅ Счёт создан в mainnet: {data['result']['invoice_id']}")
+                        logger.info(f"✅ Счёт создан: {data['result']['invoice_id']}")
                         return data["result"]
                     else:
-                        logger.error(f"Ошибка mainnet: {data}")
+                        logger.error(f"Ошибка API: {data}")
                 else:
                     text = await resp.text()
-                    logger.error(f"mainnet HTTP {resp.status}: {text}")
-                    
-                    async with session.post(
-                        "https://testnet-pay.crypt.bot/api/createInvoice",
-                        headers=headers,
-                        json=payload,
-                        timeout=30
-                    ) as resp2:
-                        if resp2.status == 200:
-                            data2 = await resp2.json()
-                            if data2.get("ok"):
-                                logger.info(f"✅ Счёт создан в testnet: {data2['result']['invoice_id']}")
-                                return data2["result"]
-                            else:
-                                logger.error(f"Ошибка testnet: {data2}")
-                        else:
-                            text2 = await resp2.text()
-                            logger.error(f"testnet HTTP {resp2.status}: {text2}")
+                    logger.error(f"HTTP {resp.status}: {text}")
     except Exception as e:
         logger.error(f"Ошибка создания счёта: {type(e).__name__}: {e}")
     
@@ -582,19 +565,6 @@ async def check_crypto_payment(invoice_id, user_id):
                         invoice = data["result"]["items"][0]
                         if str(user_id) in invoice.get("description", ""):
                             return invoice.get("status") == "paid"
-            
-            async with session.get(
-                "https://testnet-pay.crypt.bot/api/getInvoices",
-                headers=headers,
-                params=params,
-                timeout=30
-            ) as resp2:
-                if resp2.status == 200:
-                    data2 = await resp2.json()
-                    if data2.get("ok") and data2.get("result", {}).get("items"):
-                        invoice2 = data2["result"]["items"][0]
-                        if str(user_id) in invoice2.get("description", ""):
-                            return invoice2.get("status") == "paid"
     except Exception as e:
         logger.error(f"Ошибка проверки: {e}")
     
@@ -632,6 +602,18 @@ async def checkout(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     usdt_amount = await rub_to_usdt(total_rub)
     current_rate = await get_usdt_rate()
+    
+    # Проверка минимальной суммы (0.1 USDT)
+    if usdt_amount < 0.1:
+        min_rub = int(0.1 * current_rate)
+        await query.edit_message_text(
+            f"❌ Минимальная сумма заказа: 0.1 USDT (≈{min_rub} ₽)\n\n"
+            f"Ваша сумма: {total_rub} ₽ = {usdt_amount} USDT",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("◀️ Назад", callback_data="cart")
+            ]])
+        )
+        return
     
     description = f"Заказ {user_id}"
     
@@ -757,7 +739,7 @@ async def generate_product_file(user_id, item, order_id):
 Дата: {datetime.now().strftime('%d.%m.%Y %H:%M:%S')}
 Покупатель: {user_id}
 
-Это тестовый файл. Если вы его получили - значит оплата работает!
+Это тестовый файл. Оплата работает!
 """
     else:
         content = f"""📦 ВАШ ТОВАР
@@ -853,89 +835,6 @@ async def contacts(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 # ============================================
-# ULTIMATE TEST (НОВАЯ ФУНКЦИЯ)
-# ============================================
-async def ultimate_test(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Абсолютно последний тест для диагностики проблем с Bothost"""
-    import subprocess
-    import socket
-    import asyncio
-    
-    msg = await update.message.reply_text("🔍 Запускаю ultimate test...")
-    
-    results = []
-    
-    # 1. Проверяем интернет
-    try:
-        socket.gethostbyname("google.com")
-        results.append("✅ Интернет есть")
-    except:
-        results.append("❌ Нет интернета")
-    
-    # 2. Проверяем DNS
-    try:
-        ip = socket.gethostbyname("pay.crypt.bot")
-        results.append(f"✅ DNS: pay.crypt.bot = {ip}")
-    except:
-        results.append("❌ DNS не работает")
-    
-    # 3. Проверяем ping
-    try:
-        result = subprocess.run(
-            ["ping", "-c", "1", "pay.crypt.bot"],
-            capture_output=True,
-            text=True,
-            timeout=5
-        )
-        if result.returncode == 0:
-            results.append("✅ ping работает")
-        else:
-            results.append("❌ ping не работает")
-    except:
-        results.append("❌ ping ошибка")
-    
-    # 4. Проверяем HTTP с разными таймаутами
-    for timeout in [5, 10, 30]:
-        try:
-            async with aiohttp.ClientSession() as session:
-                start = datetime.now()
-                async with session.get("https://pay.crypt.bot", timeout=timeout) as resp:
-                    end = datetime.now()
-                    results.append(f"✅ HTTP за {timeout}с: статус {resp.status}, время: {(end-start).total_seconds():.1f}с")
-        except asyncio.TimeoutError:
-            results.append(f"❌ HTTP таймаут за {timeout}с")
-        except Exception as e:
-            results.append(f"❌ HTTP ошибка: {type(e).__name__}")
-    
-    # 5. Проверяем сам токен
-    cp_token = os.getenv("CP_TOKEN")
-    if cp_token:
-        results.append(f"✅ CP_TOKEN есть: {cp_token[:10]}...")
-        
-        headers = {"Crypto-Pay-API-Token": cp_token}
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(
-                    "https://pay.crypt.bot/api/getMe",
-                    headers=headers,
-                    timeout=10
-                ) as resp:
-                    if resp.status == 200:
-                        data = await resp.json()
-                        if data.get("ok"):
-                            results.append("✅ API работает")
-                        else:
-                            results.append(f"❌ API ошибка: {data}")
-                    else:
-                        results.append(f"❌ API HTTP {resp.status}")
-        except Exception as e:
-            results.append(f"❌ API ошибка: {type(e).__name__}")
-    else:
-        results.append("❌ CP_TOKEN отсутствует")
-    
-    await msg.edit_text("\n".join(results))
-
-# ============================================
 # MAIN
 # ============================================
 def main():
@@ -943,9 +842,6 @@ def main():
     
     # Команда /start
     app.add_handler(CommandHandler("start", start))
-    
-    # Команда для диагностики (НОВАЯ)
-    app.add_handler(CommandHandler("test", ultimate_test))
     
     # Обработчики callback-запросов
     app.add_handler(CallbackQueryHandler(check_subscription_callback, pattern="check_sub"))

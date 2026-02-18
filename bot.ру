@@ -19,15 +19,13 @@ logger = logging.getLogger(__name__)
 TOKEN = os.getenv("BOT_TOKEN")
 CHANNEL_ID = os.getenv("CHANNEL_ID")
 CHANNEL_URL = os.getenv("CHANNEL_URL", f"https://t.me/{CHANNEL_ID.replace('@', '')}")
-CP_TOKEN = os.getenv("CP_TOKEN")  # Токен от Crypto Bot
+CP_TOKEN = os.getenv("CP_TOKEN")
 
-# Запасной курс USDT/RUB (если API недоступно)
+# Запасной курс USDT/RUB
 DEFAULT_USDT_RATE = 90.0
 
 if not TOKEN:
     raise ValueError("❌ НЕТ BOT_TOKEN В ОКРУЖЕНИИ!")
-if not CP_TOKEN:
-    logger.warning("⚠️ CP_TOKEN не найден! Оплата криптовалютой не будет работать")
 
 # ============================================
 # КЭШ ДЛЯ КУРСА ВАЛЮТ
@@ -69,12 +67,12 @@ async def rub_to_usdt(rub_amount):
 # РАЗДЕЛЫ FAQ
 # ============================================
 FAQ_SECTIONS = [
-    {"id": 1, "name": "О сервисе", "content": "ℹ️ О СЕРВИСЕ\n\nМы - лучший магазин в Telegram. Работаем с 2024 года.\n\n✅ Быстрая доставка\n✅ Честные цены\n✅ Поддержка 24/7"},
-    {"id": 2, "name": "Что такое подтверждённая УЗ", "content": "🔐 ПОДТВЕРЖДЁННАЯ УЧЁТНАЯ ЗАПИСЬ\n\nЭто аккаунт, который прошёл верификацию.\n\n✅ Подтверждённый номер\n✅ Привязанная почта\n✅ Повышенный лимит"},
-    {"id": 3, "name": "Гарантии", "content": "🛡 ГАРАНТИИ\n\nМы гарантируем:\n\n✅ Возврат средств при проблемах\n✅ Замену товара\n✅ Поддержку после покупки"},
-    {"id": 4, "name": "Репутация", "content": "⭐ РЕПУТАЦИЯ\n\nУ нас более 1000 положительных отзывов.\n\n✅ 4.9 средняя оценка\n✅ Работаем с 2024\n✅ Проверенный магазин"},
-    {"id": 5, "name": "Правила безопасности", "content": "🔒 ПРАВИЛА БЕЗОПАСНОСТИ\n\n1. Никому не передавайте код подтверждения\n2. Не переходите по подозрительным ссылкам\n3. Пишите только в поддержку"},
-    {"id": 6, "name": "Поддержка", "content": "📞 ПОДДЕРЖКА\n\nПо всем вопросам: @support\n\nВремя работы: 24/7"}
+    {"id": 1, "name": "О сервисе", "content": "ℹ️ О СЕРВИСЕ\n\nМы - лучший магазин в Telegram. Работаем с 2024 года."},
+    {"id": 2, "name": "Что такое подтверждённая УЗ", "content": "🔐 ПОДТВЕРЖДЁННАЯ УЧЁТНАЯ ЗАПИСЬ\n\nЭто аккаунт, который прошёл верификацию."},
+    {"id": 3, "name": "Гарантии", "content": "🛡 ГАРАНТИИ\n\nМы гарантируем возврат средств при проблемах."},
+    {"id": 4, "name": "Репутация", "content": "⭐ РЕПУТАЦИЯ\n\nУ нас более 1000 положительных отзывов."},
+    {"id": 5, "name": "Правила безопасности", "content": "🔒 ПРАВИЛА БЕЗОПАСНОСТИ\n\n1. Никому не передавайте код подтверждения"},
+    {"id": 6, "name": "Поддержка", "content": "📞 ПОДДЕРЖКА\n\nПо всем вопросам: @support"}
 ]
 
 # ============================================
@@ -100,7 +98,7 @@ PRODUCTS = {
     }
 }
 
-# Временное хранилище корзин и заказов
+# Временное хранилище
 carts = {}
 orders = {}
 
@@ -198,7 +196,6 @@ async def show_faq(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     text = (
         f"📋 FAQ - Обязательное ознакомление\n\n"
-        f"Перед использованием бота необходимо ознакомиться со всеми разделами FAQ.\n\n"
         f"✔️ Прочитано: {read_count}/{total} разделов\n\n"
         f"Выберите раздел для изучения:"
     )
@@ -269,7 +266,7 @@ async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    text = f"👋 Привет, {update.effective_user.first_name}!\n\n✅ Все разделы FAQ изучены. Добро пожаловать в магазин!\n\nВыберите действие:"
+    text = f"👋 Привет, {update.effective_user.first_name}!\n\n✅ Все разделы FAQ изучены. Добро пожаловать в магазин!"
     
     if update.callback_query:
         await update.callback_query.edit_message_text(text, reply_markup=reply_markup)
@@ -337,7 +334,6 @@ async def category_test(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await query.edit_message_text(
         f"🧪 Тестовый товар\n\n"
-        f"✅ Проверка оплаты и выдачи файлов\n"
         f"💰 Цена: 1 рубль\n\n"
         f"После оплаты вы получите тестовый файл.",
         reply_markup=reply_markup
@@ -388,8 +384,7 @@ async def buy_logs(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.edit_message_text(
         f"✅ Товар добавлен в корзину!\n\n"
         f"📦 {product['name']} {quantity} шт\n"
-        f"💰 Сумма: {price} ₽\n\n"
-        f"Осталось в наличии: {product['stock']} шт",
+        f"💰 Сумма: {price} ₽",
         reply_markup=reply_markup
     )
 
@@ -424,8 +419,7 @@ async def buy_test(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await query.edit_message_text(
         f"✅ Тестовый товар добавлен в корзину!\n\n"
-        f"💰 Сумма: {price} ₽\n\n"
-        f"Сейчас вы сможете протестировать оплату.",
+        f"💰 Сумма: {price} ₽",
         reply_markup=reply_markup
     )
 
@@ -465,10 +459,10 @@ async def cart(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.edit_message_text(cart_text, reply_markup=reply_markup)
 
 # ============================================
-# ФУНКЦИЯ СОЗДАНИЯ СЧЁТА (ИСПРАВЛЕННАЯ)
+# УПРОЩЁННАЯ ФУНКЦИЯ СОЗДАНИЯ СЧЁТА (ИСПРАВЛЕННАЯ)
 # ============================================
 async def create_crypto_invoice(amount, description, user_id, context=None):
-    """Создаёт счёт в Crypto Bot"""
+    """Упрощённая версия создания счёта - убраны все лишние параметры"""
     if not CP_TOKEN:
         logger.error("❌ НЕТ CP_TOKEN!")
         return None
@@ -478,24 +472,14 @@ async def create_crypto_invoice(amount, description, user_id, context=None):
         "Content-Type": "application/json"
     }
     
-    # Получаем username бота
-    bot_username = "your_bot"
-    if context:
-        try:
-            bot_info = await context.bot.get_me()
-            bot_username = bot_info.username
-        except:
-            pass
-    
+    # Только обязательные параметры
     payload = {
         "asset": "USDT",
         "amount": str(amount),
-        "description": f"Заказ #{user_id}",  # Здесь сохраняем ID пользователя
-        "paid_btn_name": "callback",
-        "paid_btn_url": f"https://t.me/{bot_username}",
-        "allow_comments": False,
-        "allow_anonymous": False
+        "description": description
     }
+    
+    logger.info(f"Создаём счёт для user {user_id} на {amount} USDT")
     
     try:
         async with aiohttp.ClientSession() as session:
@@ -509,22 +493,33 @@ async def create_crypto_invoice(amount, description, user_id, context=None):
                 if resp.status == 200:
                     data = await resp.json()
                     if data.get("ok"):
-                        logger.info(f"✅ Счёт создан для user {user_id}")
+                        logger.info(f"✅ Счёт создан в mainnet: {data['result']['invoice_id']}")
                         return data["result"]
-                # Если не сработало - пробуем testnet
-                async with session.post(
-                    "https://testnet-pay.crypt.bot/api/createInvoice",
-                    headers=headers,
-                    json=payload,
-                    timeout=30
-                ) as resp2:
-                    if resp2.status == 200:
-                        data2 = await resp2.json()
-                        if data2.get("ok"):
-                            logger.info(f"✅ Счёт создан в TESTNET для user {user_id}")
-                            return data2["result"]
+                    else:
+                        logger.error(f"Ошибка mainnet: {data}")
+                else:
+                    text = await resp.text()
+                    logger.error(f"mainnet HTTP {resp.status}: {text}")
+                    
+                    # Если не сработало - пробуем testnet
+                    async with session.post(
+                        "https://testnet-pay.crypt.bot/api/createInvoice",
+                        headers=headers,
+                        json=payload,
+                        timeout=30
+                    ) as resp2:
+                        if resp2.status == 200:
+                            data2 = await resp2.json()
+                            if data2.get("ok"):
+                                logger.info(f"✅ Счёт создан в testnet: {data2['result']['invoice_id']}")
+                                return data2["result"]
+                            else:
+                                logger.error(f"Ошибка testnet: {data2}")
+                        else:
+                            text2 = await resp2.text()
+                            logger.error(f"testnet HTTP {resp2.status}: {text2}")
     except Exception as e:
-        logger.error(f"Ошибка создания счёта: {e}")
+        logger.error(f"Ошибка создания счёта: {type(e).__name__}: {e}")
     
     return None
 
@@ -552,8 +547,8 @@ async def check_crypto_payment(invoice_id, user_id):
                     data = await resp.json()
                     if data.get("ok") and data.get("result", {}).get("items"):
                         invoice = data["result"]["items"][0]
-                        # Проверяем, что это счёт нашего пользователя
-                        if f"#{user_id}" in invoice.get("description", ""):
+                        # Проверяем по user_id в описании
+                        if str(user_id) in invoice.get("description", ""):
                             return invoice.get("status") == "paid"
             
             # Пробуем testnet
@@ -567,7 +562,7 @@ async def check_crypto_payment(invoice_id, user_id):
                     data2 = await resp2.json()
                     if data2.get("ok") and data2.get("result", {}).get("items"):
                         invoice2 = data2["result"]["items"][0]
-                        if f"#{user_id}" in invoice2.get("description", ""):
+                        if str(user_id) in invoice2.get("description", ""):
                             return invoice2.get("status") == "paid"
     except Exception as e:
         logger.error(f"Ошибка проверки: {e}")
@@ -598,7 +593,7 @@ async def checkout(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     if not CP_TOKEN:
         await query.edit_message_text(
-            f"❌ Оплата временно недоступна",
+            "❌ Оплата временно недоступна",
             reply_markup=InlineKeyboardMarkup([[
                 InlineKeyboardButton("◀️ Назад", callback_data="cart")
             ]])
@@ -609,10 +604,13 @@ async def checkout(update: Update, context: ContextTypes.DEFAULT_TYPE):
     usdt_amount = await rub_to_usdt(total_rub)
     current_rate = await get_usdt_rate()
     
+    # Создаём описание с user_id
+    description = f"Заказ {user_id}"
+    
     # СОЗДАЁМ СЧЁТ
     invoice = await create_crypto_invoice(
         amount=usdt_amount,
-        description=f"Заказ #{user_id}",
+        description=description,
         user_id=user_id,
         context=context
     )
@@ -651,7 +649,8 @@ async def checkout(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     else:
         await query.edit_message_text(
-            "❌ Ошибка создания счёта",
+            "❌ Ошибка создания счёта.\n\n"
+            "Попробуйте позже или обратитесь в поддержку.",
             reply_markup=InlineKeyboardMarkup([[
                 InlineKeyboardButton("◀️ Назад", callback_data="cart")
             ]])
@@ -814,8 +813,7 @@ async def about(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await query.edit_message_text(
         "ℹ️ О НАС\n\n"
-        "Лучший магазин логов в Telegram\n"
-        f"📦 В наличии: {PRODUCTS['logs']['stock']} шт",
+        "Лучший магазин логов в Telegram",
         reply_markup=reply_markup
     )
 

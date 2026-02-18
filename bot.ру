@@ -5,7 +5,6 @@ import aiofiles
 import aiohttp
 import uuid
 from datetime import datetime
-from aiohttp import TCPConnector
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 
@@ -40,12 +39,10 @@ async def get_usdt_rate():
     """Получает актуальный курс USDT к RUB с CoinGecko"""
     global cached_rate, last_rate_update
     
-    # Если курс уже получали меньше часа назад - используем кэш
     if cached_rate and (datetime.now().timestamp() - last_rate_update) < 3600:
         return cached_rate
     
     try:
-        # CoinGecko API (бесплатно, без ключа)
         url = "https://api.coingecko.com/api/v3/simple/price?ids=tether&vs_currencies=rub"
         
         async with aiohttp.ClientSession() as session:
@@ -58,22 +55,15 @@ async def get_usdt_rate():
                         last_rate_update = datetime.now().timestamp()
                         logger.info(f"Курс USDT/RUB: {rate}")
                         return rate
-                    else:
-                        logger.error(f"Не удалось получить курс: {data}")
-                else:
-                    logger.error(f"HTTP {resp.status}")
     except Exception as e:
         logger.error(f"Ошибка получения курса: {e}")
     
-    # Если не удалось получить курс - используем запасной
     return DEFAULT_USDT_RATE
 
 async def rub_to_usdt(rub_amount):
     """Конвертирует рубли в USDT"""
     rate = await get_usdt_rate()
-    usdt_amount = rub_amount / rate
-    # Округляем до 2 знаков (для USDT)
-    return round(usdt_amount, 2)
+    return round(rub_amount / rate, 2)
 
 # ============================================
 # РАЗДЕЛЫ FAQ
@@ -101,11 +91,11 @@ PRODUCTS = {
             10: 15000
         }
     },
-    "test": {  # Проверочный товар за 1 рубль
+    "test": {
         "name": "🧪 Тестовый товар",
         "stock": 999999,
         "prices": {
-            1: 1  # 1 рубль
+            1: 1
         }
     }
 }
@@ -475,36 +465,32 @@ async def cart(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.edit_message_text(cart_text, reply_markup=reply_markup)
 
 # ============================================
-# ИСПРАВЛЕННАЯ ФУНКЦИЯ КРИПТООПЛАТЫ (БЕЗ ПРОКСИ)
+# ФУНКЦИЯ СОЗДАНИЯ СЧЁТА (ИСПРАВЛЕННАЯ)
 # ============================================
 async def create_crypto_invoice(amount, description, user_id, context=None):
-    """Создаёт счёт в Crypto Bot (без прокси)"""
+    """Создаёт счёт в Crypto Bot"""
     if not CP_TOKEN:
         logger.error("❌ НЕТ CP_TOKEN!")
         return None
-    
-    # Определяем URL (тестнет если в токене есть test)
-    is_testnet = "test" in CP_TOKEN.lower()
-    base_url = "https://testnet-pay.crypt.bot/api" if is_testnet else "https://pay.crypt.bot/api"
     
     headers = {
         "Crypto-Pay-API-Token": CP_TOKEN,
         "Content-Type": "application/json"
     }
     
-    # Получаем username бота, если есть context
-    bot_username = "your_bot_username"
+    # Получаем username бота
+    bot_username = "your_bot"
     if context:
         try:
             bot_info = await context.bot.get_me()
             bot_username = bot_info.username
-        except Exception as e:
-            logger.error(f"Не удалось получить username бота: {e}")
+        except:
+            pass
     
     payload = {
         "asset": "USDT",
         "amount": str(amount),
-        "description": description,
+        "description": f"Заказ #{user_id}",  # Здесь сохраняем ID пользователя
         "paid_btn_name": "callback",
         "paid_btn_url": f"https://t.me/{bot_username}",
         "allow_comments": False,
@@ -513,8 +499,9 @@ async def create_crypto_invoice(amount, description, user_id, context=None):
     
     try:
         async with aiohttp.ClientSession() as session:
+            # Пробуем mainnet
             async with session.post(
-                f"{base_url}/createInvoice",
+                "https://pay.crypt.bot/api/createInvoice",
                 headers=headers,
                 json=payload,
                 timeout=30
@@ -522,48 +509,41 @@ async def create_crypto_invoice(amount, description, user_id, context=None):
                 if resp.status == 200:
                     data = await resp.json()
                     if data.get("ok"):
-                        logger.info(f"✅ Счёт создан для user {user_id}, сумма {amount} USDT")
+                        logger.info(f"✅ Счёт создан для user {user_id}")
                         return data["result"]
-                    else:
-                        logger.error(f"Ошибка API: {data}")
-                else:
-                    text = await resp.text()
-                    logger.error(f"HTTP {resp.status} для user {user_id}: {text}")
-                    
-                    # Детальная диагностика ошибки
-                    if resp.status == 401:
-                        logger.error("❌ Ошибка 401: Неверный токен Crypto Bot")
-                    elif resp.status == 403:
-                        logger.error("❌ Ошибка 403: Недостаточно прав. Включите createCheck и transfer")
-                    elif resp.status == 422:
-                        logger.error("❌ Ошибка 422: Неверные параметры запроса")
-    except aiohttp.ClientConnectorError as e:
-        logger.error(f"❌ Ошибка подключения к Crypto Bot: {e}")
-    except asyncio.TimeoutError:
-        logger.error(f"❌ Таймаут при запросе к Crypto Bot")
+                # Если не сработало - пробуем testnet
+                async with session.post(
+                    "https://testnet-pay.crypt.bot/api/createInvoice",
+                    headers=headers,
+                    json=payload,
+                    timeout=30
+                ) as resp2:
+                    if resp2.status == 200:
+                        data2 = await resp2.json()
+                        if data2.get("ok"):
+                            logger.info(f"✅ Счёт создан в TESTNET для user {user_id}")
+                            return data2["result"]
     except Exception as e:
-        logger.error(f"❌ Неизвестная ошибка: {type(e).__name__}: {e}")
+        logger.error(f"Ошибка создания счёта: {e}")
     
     return None
 
 # ============================================
 # ФУНКЦИЯ ПРОВЕРКИ СТАТУСА ОПЛАТЫ
 # ============================================
-async def check_crypto_payment(invoice_id):
+async def check_crypto_payment(invoice_id, user_id):
     """Проверяет статус оплаты"""
     if not CP_TOKEN:
-        return None
-    
-    is_testnet = "test" in CP_TOKEN.lower()
-    base_url = "https://testnet-pay.crypt.bot/api" if is_testnet else "https://pay.crypt.bot/api"
+        return False
     
     headers = {"Crypto-Pay-API-Token": CP_TOKEN}
     params = {"invoice_ids": invoice_id}
     
     try:
         async with aiohttp.ClientSession() as session:
+            # Пробуем mainnet
             async with session.get(
-                f"{base_url}/getInvoices",
+                "https://pay.crypt.bot/api/getInvoices",
                 headers=headers,
                 params=params,
                 timeout=30
@@ -571,80 +551,28 @@ async def check_crypto_payment(invoice_id):
                 if resp.status == 200:
                     data = await resp.json()
                     if data.get("ok") and data.get("result", {}).get("items"):
-                        return data["result"]["items"][0].get("status")
+                        invoice = data["result"]["items"][0]
+                        # Проверяем, что это счёт нашего пользователя
+                        if f"#{user_id}" in invoice.get("description", ""):
+                            return invoice.get("status") == "paid"
+            
+            # Пробуем testnet
+            async with session.get(
+                "https://testnet-pay.crypt.bot/api/getInvoices",
+                headers=headers,
+                params=params,
+                timeout=30
+            ) as resp2:
+                if resp2.status == 200:
+                    data2 = await resp2.json()
+                    if data2.get("ok") and data2.get("result", {}).get("items"):
+                        invoice2 = data2["result"]["items"][0]
+                        if f"#{user_id}" in invoice2.get("description", ""):
+                            return invoice2.get("status") == "paid"
     except Exception as e:
         logger.error(f"Ошибка проверки: {e}")
     
-    return None
-
-# ============================================
-# ФУНКЦИИ ДЛЯ РАБОТЫ С ФАЙЛАМИ
-# ============================================
-async def generate_product_file(user_id, item, order_id):
-    """Генерирует файл с товаром"""
-    os.makedirs("products", exist_ok=True)
-    
-    filename = f"products/{item['product_name'].replace(' ', '_')}_{order_id}_{uuid.uuid4().hex[:8]}.txt"
-    
-    if item['category'] == 'test':
-        content = f"""🧪 ТЕСТОВЫЙ ТОВАР
-
-✅ Оплата прошла успешно!
-
-Заказ #{order_id}
-Дата: {datetime.now().strftime('%d.%m.%Y %H:%M:%S')}
-Покупатель: {user_id}
-
-Это тестовый файл. Если вы его получили - значит оплата работает!
-
-Спасибо за тестирование! 🎉
-"""
-    else:
-        content = f"""📦 ВАШ ТОВАР
-
-✅ Оплата подтверждена!
-
-Заказ #{order_id}
-Товар: {item['product_name']}
-Количество: {item['quantity']} шт
-Цена: {item['price']} ₽
-Дата: {datetime.now().strftime('%d.%m.%Y %H:%M:%S')}
-
-🔑 ДАННЫЕ ДЛЯ ДОСТУПА:
-----------------------------------------
-Логин: user_{user_id}
-Пароль: {uuid.uuid4().hex[:12]}
-Сервер: logs.example.com
-Порт: 2222
-----------------------------------------
-
-❗ Сохраните эти данные!
-"""
-    
-    async with aiofiles.open(filename, 'w', encoding='utf-8') as f:
-        await f.write(content)
-    
-    return filename
-
-async def send_product_file(update, context, user_id, file_path):
-    """Отправляет файл пользователю"""
-    try:
-        from telegram import FSInputFile
-        
-        document = FSInputFile(file_path)
-        await context.bot.send_document(
-            chat_id=user_id,
-            document=document,
-            caption="✅ Ваш товар готов!"
-        )
-        
-        os.remove(file_path)
-        logger.info(f"Файл {file_path} отправлен и удалён")
-        return True
-        
-    except Exception as e:
-        logger.error(f"Ошибка отправки файла: {e}")
-        return False
+    return False
 
 # ============================================
 # ОФОРМЛЕНИЕ ЗАКАЗА
@@ -670,9 +598,7 @@ async def checkout(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     if not CP_TOKEN:
         await query.edit_message_text(
-            f"❌ Оплата временно недоступна\n\n"
-            f"Сумма: {total_rub} ₽\n"
-            f"Пожалуйста, попробуйте позже.",
+            f"❌ Оплата временно недоступна",
             reply_markup=InlineKeyboardMarkup([[
                 InlineKeyboardButton("◀️ Назад", callback_data="cart")
             ]])
@@ -683,10 +609,10 @@ async def checkout(update: Update, context: ContextTypes.DEFAULT_TYPE):
     usdt_amount = await rub_to_usdt(total_rub)
     current_rate = await get_usdt_rate()
     
-    # СОЗДАЁМ СЧЁТ В USDT
+    # СОЗДАЁМ СЧЁТ
     invoice = await create_crypto_invoice(
         amount=usdt_amount,
-        description=f"Покупка {len(user_cart)} товаров на {total_rub} RUB",
+        description=f"Заказ #{user_id}",
         user_id=user_id,
         context=context
     )
@@ -703,34 +629,29 @@ async def checkout(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "amount_usdt": usdt_amount,
             "rate": current_rate,
             "cart": user_cart.copy(),
-            "status": "pending"
+            "user_id": user_id
         }
         context.user_data["pending_payments"].append(payment_info)
         
         keyboard = [
-            [InlineKeyboardButton("💳 ОПЛАТИТЬ USDT", url=invoice["pay_url"])],
-            [InlineKeyboardButton("✅ Я ОПЛАТИЛ", callback_data=f"check_payment_{invoice['invoice_id']}")],
+            [InlineKeyboardButton("💳 ОПЛАТИТЬ", url=invoice["pay_url"])],
+            [InlineKeyboardButton("✅ Я ОПЛАТИЛ", callback_data=f"check_{invoice['invoice_id']}")],
             [InlineKeyboardButton("◀️ Отмена", callback_data="cart")]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
         await query.edit_message_text(
-            f"💳 ОПЛАТА КРИПТОВАЛЮТОЙ\n\n"
-            f"💰 Сумма в RUB: {total_rub} ₽\n"
-            f"💵 Сумма в USDT: {usdt_amount} USDT\n"
-            f"📊 Курс: 1 USDT = {current_rate:.2f} ₽\n"
-            f"📦 Товаров: {len(user_cart)} шт\n\n"
-            f"1. Нажми кнопку ОПЛАТИТЬ\n"
-            f"2. Оплати через Crypto Bot\n"
-            f"3. Нажми «Я ОПЛАТИЛ»\n\n"
-            f"После подтверждения товар придёт автоматически.",
+            f"💳 ОПЛАТА\n\n"
+            f"💰 Сумма: {total_rub} RUB = {usdt_amount} USDT\n"
+            f"📊 Курс: {current_rate:.2f} RUB/USDT\n\n"
+            f"1. Нажми ОПЛАТИТЬ\n"
+            f"2. Оплати в Crypto Bot\n"
+            f"3. Нажми «Я ОПЛАТИЛ»",
             reply_markup=reply_markup
         )
     else:
-        # Упрощённое сообщение об ошибке
         await query.edit_message_text(
-            "❌ Ошибка создания счёта.\n\n"
-            "Проверьте подключение к Crypto Bot.",
+            "❌ Ошибка создания счёта",
             reply_markup=InlineKeyboardMarkup([[
                 InlineKeyboardButton("◀️ Назад", callback_data="cart")
             ]])
@@ -740,32 +661,29 @@ async def checkout(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ПРОВЕРКА ОПЛАТЫ
 # ============================================
 async def check_payment_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Проверка оплаты с защитой"""
+    """Проверяет статус оплаты"""
     query = update.callback_query
     await query.answer()
     
-    invoice_id = int(query.data.split("_")[2])
+    invoice_id = int(query.data.split("_")[1])
     user_id = query.from_user.id
     
+    # Ищем платёж
     payment_info = None
     if "pending_payments" in context.user_data:
         for p in context.user_data["pending_payments"]:
-            if p["invoice_id"] == invoice_id:
+            if p["invoice_id"] == invoice_id and p["user_id"] == user_id:
                 payment_info = p
                 break
     
     if not payment_info:
-        await query.edit_message_text(
-            "❌ Платёж не найден.",
-            reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton("◀️ В корзину", callback_data="cart")
-            ]])
-        )
+        await query.answer("❌ Платёж не найден", show_alert=True)
         return
     
-    status = await check_crypto_payment(invoice_id)
+    # Проверяем статус
+    is_paid = await check_crypto_payment(invoice_id, user_id)
     
-    if status == "paid":
+    if is_paid:
         await query.edit_message_text("✅ Платёж подтверждён! Формируем товар...")
         
         order_id = len(orders.get(user_id, [])) + 1
@@ -777,11 +695,12 @@ async def check_payment_callback(update: Update, context: ContextTypes.DEFAULT_T
             "items": payment_info["cart"],
             "total_rub": payment_info["amount_rub"],
             "total_usdt": payment_info["amount_usdt"],
-            "rate": payment_info.get("rate", "?"),
+            "rate": payment_info["rate"],
             "status": "Оплачен",
             "date": datetime.now().isoformat()
         })
         
+        # Генерируем файлы
         files_sent = 0
         for item in payment_info["cart"]:
             file_path = await generate_product_file(user_id, item, order_id)
@@ -793,18 +712,70 @@ async def check_payment_callback(update: Update, context: ContextTypes.DEFAULT_T
         
         await context.bot.send_message(
             chat_id=user_id,
-            text=f"✅ Заказ #{order_id} выполнен!\nОтправлено файлов: {files_sent}\n\nСпасибо за покупку!",
+            text=f"✅ Заказ выполнен!\nОтправлено файлов: {files_sent}",
             reply_markup=InlineKeyboardMarkup([[
                 InlineKeyboardButton("📦 В каталог", callback_data="catalog")
             ]])
         )
-        
-    elif status == "active":
-        await query.answer("⏳ Платёж создан, но ещё не оплачен", show_alert=True)
     else:
-        await query.answer("❌ Платёж не найден или просрочен", show_alert=True)
-        if payment_info in context.user_data["pending_payments"]:
-            context.user_data["pending_payments"].remove(payment_info)
+        await query.answer("⏳ Платёж не найден или не оплачен", show_alert=True)
+
+# ============================================
+# ФУНКЦИИ ДЛЯ РАБОТЫ С ФАЙЛАМИ
+# ============================================
+async def generate_product_file(user_id, item, order_id):
+    """Генерирует файл с товаром"""
+    os.makedirs("products", exist_ok=True)
+    
+    filename = f"products/{item['product_name'].replace(' ', '_')}_{order_id}_{uuid.uuid4().hex[:8]}.txt"
+    
+    if item['category'] == 'test':
+        content = f"""🧪 ТЕСТОВЫЙ ТОВАР
+
+✅ Оплата прошла успешно!
+
+Заказ #{order_id}
+Дата: {datetime.now().strftime('%d.%m.%Y %H:%M:%S')}
+Покупатель: {user_id}
+
+Это тестовый файл. Если вы его получили - значит оплата работает!
+"""
+    else:
+        content = f"""📦 ВАШ ТОВАР
+
+Заказ #{order_id}
+Товар: {item['product_name']}
+Количество: {item['quantity']} шт
+Дата: {datetime.now().strftime('%d.%m.%Y %H:%M:%S')}
+
+🔑 ДАННЫЕ:
+Логин: user_{user_id}
+Пароль: {uuid.uuid4().hex[:12]}
+Сервер: logs.example.com
+"""
+    
+    async with aiofiles.open(filename, 'w', encoding='utf-8') as f:
+        await f.write(content)
+    
+    return filename
+
+async def send_product_file(update, context, user_id, file_path):
+    """Отправляет файл пользователю"""
+    try:
+        from telegram import FSInputFile
+        
+        document = FSInputFile(file_path)
+        await context.bot.send_document(
+            chat_id=user_id,
+            document=document,
+            caption="✅ Ваш товар готов!"
+        )
+        
+        os.remove(file_path)
+        return True
+    except Exception as e:
+        logger.error(f"Ошибка отправки файла: {e}")
+        return False
 
 # ============================================
 # ИСТОРИЯ ЗАКАЗОВ
@@ -821,13 +792,10 @@ async def orders_history(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         text = "📦 ИСТОРИЯ ЗАКАЗОВ:\n\n"
         for order in user_orders[-5:]:
-            text += f"Заказ #{order['order_id']}\n"
-            text += f"💰 {order['total_rub']} ₽ ({order['total_usdt']} USDT)\n"
-            text += f"📊 Курс: {order.get('rate', '?')} ₽/USDT\n"
+            text += f"Заказ #{order['order_id']} - {order['total_rub']} RUB\n"
             for item in order['items']:
                 text += f"  • {item['product_name']} {item['quantity']} шт\n"
-            text += f"Статус: {order['status']}\n"
-            text += f"Дата: {order.get('date', 'не указана')[:10]}\n\n"
+            text += f"Статус: {order['status']}\n\n"
     
     keyboard = [[InlineKeyboardButton("◀️ Назад", callback_data="back_to_menu")]]
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -847,8 +815,6 @@ async def about(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.edit_message_text(
         "ℹ️ О НАС\n\n"
         "Лучший магазин логов в Telegram\n"
-        "Работаем 24/7\n"
-        "Быстрая доставка\n"
         f"📦 В наличии: {PRODUCTS['logs']['stock']} шт",
         reply_markup=reply_markup
     )
@@ -865,7 +831,6 @@ async def contacts(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await query.edit_message_text(
         "📞 КОНТАКТЫ\n\n"
-        "Поддержка: @support\n"
         f"Канал: {CHANNEL_URL}\n"
         "Время работы: 24/7",
         reply_markup=reply_markup
@@ -899,7 +864,7 @@ def main():
     app.add_handler(CallbackQueryHandler(about, pattern="about"))
     app.add_handler(CallbackQueryHandler(contacts, pattern="contacts"))
     app.add_handler(CallbackQueryHandler(checkout, pattern="checkout"))
-    app.add_handler(CallbackQueryHandler(check_payment_callback, pattern="^check_payment_[0-9]+$"))
+    app.add_handler(CallbackQueryHandler(check_payment_callback, pattern="^check_[0-9]+$"))
     
     # Обработчики покупок
     app.add_handler(CallbackQueryHandler(buy_logs, pattern="^buy_logs_[0-9]+$"))

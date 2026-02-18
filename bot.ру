@@ -1,6 +1,5 @@
 import os
 import logging
-import json
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 
@@ -20,12 +19,24 @@ if not TOKEN:
     raise ValueError("❌ НЕТ BOT_TOKEN В ОКРУЖЕНИИ!")
 
 # ============================================
+# РАЗДЕЛЫ FAQ
+# ============================================
+FAQ_SECTIONS = [
+    {"id": 1, "name": "О сервисе", "content": "ℹ️ О СЕРВИСЕ\n\nМы - лучший магазин в Telegram. Работаем с 2024 года.\n\n✅ Быстрая доставка\n✅ Честные цены\n✅ Поддержка 24/7"},
+    {"id": 2, "name": "Что такое подтверждённая УЗ", "content": "🔐 ПОДТВЕРЖДЁННАЯ УЧЁТНАЯ ЗАПИСЬ\n\nЭто аккаунт, который прошёл верификацию.\n\n✅ Подтверждённый номер\n✅ Привязанная почта\n✅ Повышенный лимит"},
+    {"id": 3, "name": "Гарантии", "content": "🛡 ГАРАНТИИ\n\nМы гарантируем:\n\n✅ Возврат средств при проблемах\n✅ Замену товара\n✅ Поддержку после покупки"},
+    {"id": 4, "name": "Репутация", "content": "⭐ РЕПУТАЦИЯ\n\nУ нас более 1000 положительных отзывов.\n\n✅ 4.9 средняя оценка\n✅ Работаем с 2024\n✅ Проверенный магазин"},
+    {"id": 5, "name": "Правила безопасности", "content": "🔒 ПРАВИЛА БЕЗОПАСНОСТИ\n\n1. Никому не передавайте код подтверждения\n2. Не переходите по подозрительным ссылкам\n3. Пишите только в поддержку"},
+    {"id": 6, "name": "Поддержка", "content": "📞 ПОДДЕРЖКА\n\nПо всем вопросам: @support\n\nВремя работы: 24/7"}
+]
+
+# ============================================
 # ДАННЫЕ ТОВАРОВ
 # ============================================
 PRODUCTS = {
     "logs": {
         "name": "📦 Логи",
-        "stock": 2250,  # Наличие
+        "stock": 2250,
         "prices": {
             1: 1500,
             3: 4500,
@@ -35,14 +46,13 @@ PRODUCTS = {
     }
 }
 
-# Временное хранилище корзин (в реальном проекте используй БД)
+# Временное хранилище корзин
 carts = {}
 
 # ============================================
 # ФУНКЦИЯ ПРОВЕРКИ ПОДПИСКИ
 # ============================================
 async def check_subscription(user_id, context):
-    """Проверяет, подписан ли пользователь на канал"""
     try:
         member = await context.bot.get_chat_member(chat_id=CHANNEL_ID, user_id=user_id)
         return member.status in ["member", "creator", "administrator"]
@@ -54,46 +64,22 @@ async def check_subscription(user_id, context):
 # КОМАНДА /start
 # ============================================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработчик команды /start"""
     user = update.effective_user
     user_id = user.id
     
     logger.info(f"Пользователь {user_id} запустил бота")
     
-    # Проверяем подписку
     is_subscribed = await check_subscription(user_id, context)
     
     if is_subscribed:
-        # Если подписан - показываем главное меню
-        await show_main_menu(update, context)
+        await show_faq(update, context)
     else:
-        # Если не подписан - просим подписаться
         await send_subscribe_request(update, context)
-
-# ============================================
-# ПОКАЗ ГЛАВНОГО МЕНЮ
-# ============================================
-async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Отображает главное меню"""
-    keyboard = [
-        [InlineKeyboardButton("🛍 Каталог товаров", callback_data="catalog")],
-        [InlineKeyboardButton("🛒 Моя корзина", callback_data="cart")],
-        [InlineKeyboardButton("ℹ️ О нас", callback_data="about")]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    text = f"👋 Привет, {update.effective_user.first_name}!\n\nВыберите действие:"
-    
-    if update.callback_query:
-        await update.callback_query.edit_message_text(text, reply_markup=reply_markup)
-    else:
-        await update.message.reply_text(text, reply_markup=reply_markup)
 
 # ============================================
 # ЗАПРОС ПОДПИСКИ
 # ============================================
 async def send_subscribe_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Отправляет сообщение с просьбой подписаться"""
     keyboard = [
         [InlineKeyboardButton("🔗 ПОДПИСАТЬСЯ", url=CHANNEL_URL)],
         [InlineKeyboardButton("✅ Я ПОДПИСАЛСЯ", callback_data="check_sub")]
@@ -111,7 +97,6 @@ async def send_subscribe_request(update: Update, context: ContextTypes.DEFAULT_T
 # ПРОВЕРКА ПОДПИСКИ ПОСЛЕ НАЖАТИЯ КНОПКИ
 # ============================================
 async def check_subscription_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработчик нажатия на кнопку 'Я ПОДПИСАЛСЯ'"""
     query = update.callback_query
     await query.answer()
     
@@ -119,7 +104,7 @@ async def check_subscription_callback(update: Update, context: ContextTypes.DEFA
     is_subscribed = await check_subscription(user_id, context)
     
     if is_subscribed:
-        await show_main_menu(update, context)
+        await show_faq(update, context)
     else:
         await query.edit_message_text(
             f"❌ Подписка не найдена!",
@@ -129,10 +114,116 @@ async def check_subscription_callback(update: Update, context: ContextTypes.DEFA
         )
 
 # ============================================
+# ПОКАЗ FAQ
+# ============================================
+async def show_faq(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Отображает меню FAQ"""
+    user_id = update.effective_user.id
+    
+    if "faq_progress" not in context.user_data:
+        context.user_data["faq_progress"] = {str(section["id"]): False for section in FAQ_SECTIONS}
+    
+    progress = context.user_data["faq_progress"]
+    read_count = sum(1 for v in progress.values() if v)
+    total = len(FAQ_SECTIONS)
+    
+    keyboard = []
+    for section in FAQ_SECTIONS:
+        section_id = str(section["id"])
+        is_read = progress.get(section_id, False)
+        emoji = "✅" if is_read else "🔗"
+        button_text = f"{emoji} {section['name']}"
+        keyboard.append([InlineKeyboardButton(button_text, callback_data=f"faq_{section_id}")])
+    
+    if read_count == total:
+        keyboard.append([InlineKeyboardButton("✅ ВСЁ ПРОЧИТАНО! Перейти в магазин", callback_data="go_to_shop")])
+    else:
+        keyboard.append([InlineKeyboardButton(f"✖️ Прочитайте все разделы ({read_count}/{total})", callback_data="faq_reminder")])
+    
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    text = (
+        f"📋 FAQ - Обязательное ознакомление\n\n"
+        f"Перед использованием бота необходимо ознакомиться со всеми разделами FAQ.\n\n"
+        f"✔️ Прочитано: {read_count}/{total} разделов\n\n"
+        f"Выберите раздел для изучения:"
+    )
+    
+    if update.callback_query:
+        await update.callback_query.edit_message_text(text, reply_markup=reply_markup)
+    else:
+        await update.message.reply_text(text, reply_markup=reply_markup)
+
+# ============================================
+# ОБРАБОТЧИК РАЗДЕЛОВ FAQ
+# ============================================
+async def faq_section_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    section_id = query.data.replace("faq_", "")
+    
+    section = next((s for s in FAQ_SECTIONS if str(s["id"]) == section_id), None)
+    if not section:
+        return
+    
+    if "faq_progress" not in context.user_data:
+        context.user_data["faq_progress"] = {}
+    
+    context.user_data["faq_progress"][section_id] = True
+    
+    keyboard = [[InlineKeyboardButton("◀️ Назад к FAQ", callback_data="back_to_faq")]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await query.edit_message_text(
+        section["content"],
+        reply_markup=reply_markup
+    )
+
+# ============================================
+# НАПОМИНАНИЕ О НЕПРОЧИТАННЫХ РАЗДЕЛАХ
+# ============================================
+async def faq_reminder_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    read_count = sum(1 for v in context.user_data.get("faq_progress", {}).values() if v)
+    total = len(FAQ_SECTIONS)
+    remaining = total - read_count
+    
+    await query.answer(
+        f"❌ Осталось прочитать {remaining} разделов!",
+        show_alert=True
+    )
+
+# ============================================
+# ПЕРЕХОД В МАГАЗИН
+# ============================================
+async def go_to_shop(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await show_main_menu(update, context)
+
+# ============================================
+# ПОКАЗ ГЛАВНОГО МЕНЮ
+# ============================================
+async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    keyboard = [
+        [InlineKeyboardButton("🛍 Каталог товаров", callback_data="catalog")],
+        [InlineKeyboardButton("🛒 Моя корзина", callback_data="cart")],
+        [InlineKeyboardButton("ℹ️ О нас", callback_data="about")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    text = f"👋 Привет, {update.effective_user.first_name}!\n\n✅ Все разделы FAQ изучены. Добро пожаловать в магазин!\n\nВыберите действие:"
+    
+    if update.callback_query:
+        await update.callback_query.edit_message_text(text, reply_markup=reply_markup)
+    else:
+        await update.message.reply_text(text, reply_markup=reply_markup)
+
+# ============================================
 # КАТАЛОГ ТОВАРОВ
 # ============================================
 async def catalog(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Показывает каталог категорий"""
     query = update.callback_query
     await query.answer()
     
@@ -151,7 +242,6 @@ async def catalog(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # КАТЕГОРИЯ "ЛОГИ"
 # ============================================
 async def category_logs(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Показывает товары в категории Логи"""
     query = update.callback_query
     await query.answer()
     
@@ -169,11 +259,6 @@ async def category_logs(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.edit_message_text(
         f"📦 Логи\n\n"
         f"В наличии: {product['stock']} шт\n\n"
-        f"Цены:\n"
-        f"• 1 шт = 1500 ₽\n"
-        f"• 3 шт = 4500 ₽\n"
-        f"• 5 шт = 7500 ₽\n"
-        f"• 10 шт = 15000 ₽\n\n"
         f"Выберите количество:",
         reply_markup=reply_markup
     )
@@ -182,16 +267,13 @@ async def category_logs(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ПОКУПКА ТОВАРА
 # ============================================
 async def buy_logs(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработчик покупки логов"""
     query = update.callback_query
     await query.answer()
     
-    # Получаем количество из callback_data (например "buy_logs_1" -> 1)
     quantity = int(query.data.split("_")[2])
     product = PRODUCTS["logs"]
     price = product["prices"][quantity]
     
-    # Проверяем наличие
     if product["stock"] < quantity:
         await query.edit_message_text(
             f"❌ Недостаточно товара в наличии!\n"
@@ -202,12 +284,10 @@ async def buy_logs(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
     
-    # Добавляем в корзину (здесь временно, в реальном проекте - БД)
     user_id = query.from_user.id
     if user_id not in carts:
         carts[user_id] = []
     
-    # Проверяем, не покупал ли уже такое же
     cart_item = {
         "category": "logs",
         "quantity": quantity,
@@ -216,7 +296,6 @@ async def buy_logs(update: Update, context: ContextTypes.DEFAULT_TYPE):
     }
     carts[user_id].append(cart_item)
     
-    # Уменьшаем наличие (в реальном проекте - только после оплаты)
     product["stock"] -= quantity
     
     keyboard = [
@@ -237,7 +316,6 @@ async def buy_logs(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # КОРЗИНА
 # ============================================
 async def cart(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Показывает содержимое корзины"""
     query = update.callback_query
     await query.answer()
     
@@ -273,7 +351,6 @@ async def cart(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ОФОРМЛЕНИЕ ЗАКАЗА
 # ============================================
 async def checkout(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Оформление заказа"""
     query = update.callback_query
     await query.answer()
     
@@ -286,7 +363,6 @@ async def checkout(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     total = sum(item['price'] for item in user_cart)
     
-    # Здесь будет оплата (крипта или другой способ)
     keyboard = [
         [InlineKeyboardButton("💳 Оплатить", callback_data="pay")],
         [InlineKeyboardButton("◀️ Назад в корзину", callback_data="cart")]
@@ -305,7 +381,6 @@ async def checkout(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ОПЛАТА (ЗАГЛУШКА)
 # ============================================
 async def pay(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Заглушка для оплаты"""
     query = update.callback_query
     await query.answer()
     
@@ -316,7 +391,6 @@ async def pay(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("❌ Корзина пуста")
         return
     
-    # Очищаем корзину после "оплаты"
     carts[user_id] = []
     
     await query.edit_message_text(
@@ -332,7 +406,6 @@ async def pay(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # О НАС
 # ============================================
 async def about(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Информация о магазине"""
     query = update.callback_query
     await query.answer()
     
@@ -352,7 +425,6 @@ async def about(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # MAIN
 # ============================================
 def main():
-    """Запуск бота"""
     app = Application.builder().token(TOKEN).build()
     
     # Команда /start
@@ -360,24 +432,30 @@ def main():
     
     # Обработчики callback-запросов
     app.add_handler(CallbackQueryHandler(check_subscription_callback, pattern="check_sub"))
+    app.add_handler(CallbackQueryHandler(back_to_faq, pattern="back_to_faq"))
+    app.add_handler(CallbackQueryHandler(faq_reminder_handler, pattern="faq_reminder"))
+    app.add_handler(CallbackQueryHandler(go_to_shop, pattern="go_to_shop"))
     app.add_handler(CallbackQueryHandler(back_to_menu, pattern="back_to_menu"))
     
-    # Обработчики меню
+    # Обработчики разделов FAQ
+    app.add_handler(CallbackQueryHandler(faq_section_handler, pattern="^faq_[0-9]+$"))
+    
+    # Обработчики магазина
     app.add_handler(CallbackQueryHandler(catalog, pattern="catalog"))
     app.add_handler(CallbackQueryHandler(category_logs, pattern="category_logs"))
     app.add_handler(CallbackQueryHandler(cart, pattern="cart"))
     app.add_handler(CallbackQueryHandler(about, pattern="about"))
     app.add_handler(CallbackQueryHandler(checkout, pattern="checkout"))
     app.add_handler(CallbackQueryHandler(pay, pattern="pay"))
-    
-    # Обработчики покупок (все, что начинаются с buy_logs_)
     app.add_handler(CallbackQueryHandler(buy_logs, pattern="^buy_logs_[0-9]+$"))
     
     logger.info("🚀 Бот запущен...")
     app.run_polling()
 
+async def back_to_faq(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await show_faq(update, context)
+
 async def back_to_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Возврат в главное меню"""
     await show_main_menu(update, context)
 
 if __name__ == "__main__":

@@ -7,7 +7,7 @@ import uuid
 import random
 from datetime import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes, FSInputFile
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 
 # Настройка логирования
 logging.basicConfig(
@@ -811,9 +811,9 @@ async def bank_quantity(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["selected_bank"] = bank_name
     
     keyboard = [
-        [InlineKeyboardButton("1 шт - 2000 ₽", callback_data=f"buy_banks_1")],
-        [InlineKeyboardButton("3 шт - 5000 ₽", callback_data=f"buy_banks_3")],
-        [InlineKeyboardButton("5 шт - 8500 ₽", callback_data=f"buy_banks_5")],
+        [InlineKeyboardButton("1 шт - 2000 ₽", callback_data="buy_banks_1")],
+        [InlineKeyboardButton("3 шт - 5000 ₽", callback_data="buy_banks_3")],
+        [InlineKeyboardButton("5 шт - 8500 ₽", callback_data="buy_banks_5")],
         [InlineKeyboardButton("◀️ Назад", callback_data="category_banks")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -1037,13 +1037,13 @@ async def test_buy_logs(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         # Проверяем что файл создался
         if os.path.exists(filename) and os.path.getsize(filename) > 0:
-            # Отправляем файл
-            document = FSInputFile(filename)
-            await context.bot.send_document(
-                chat_id=user_id,
-                document=document,
-                caption=f"🧪 Тестовые логи ({quantity} шт)\n\nПоддержка: @shoplogs24support"
-            )
+            # Отправляем файл через обычный open()
+            with open(filename, 'rb') as f:
+                await context.bot.send_document(
+                    chat_id=user_id,
+                    document=f,
+                    caption=f"🧪 Тестовые логи ({quantity} шт)\n\nПоддержка: @shoplogs24support"
+                )
             
             # Удаляем файл после отправки
             os.remove(filename)
@@ -1124,13 +1124,13 @@ async def test_buy_banks(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         # Проверяем что файл создался
         if os.path.exists(filename) and os.path.getsize(filename) > 0:
-            # Отправляем файл
-            document = FSInputFile(filename)
-            await context.bot.send_document(
-                chat_id=user_id,
-                document=document,
-                caption=f"🧪 Тестовые {bank_name} ({quantity} шт)\n\nПоддержка: @shoplogs24support"
-            )
+            # Отправляем файл через обычный open()
+            with open(filename, 'rb') as f:
+                await context.bot.send_document(
+                    chat_id=user_id,
+                    document=f,
+                    caption=f"🧪 Тестовые {bank_name} ({quantity} шт)\n\nПоддержка: @shoplogs24support"
+                )
             
             # Удаляем файл после отправки
             os.remove(filename)
@@ -1440,12 +1440,12 @@ async def check_payment_callback(update: Update, context: ContextTypes.DEFAULT_T
                 file_path = await generate_banks_csv(user_id, order_id, item.get("bank", "Неизвестный"), item["quantity"])
             
             if file_path and os.path.exists(file_path):
-                document = FSInputFile(file_path)
-                await context.bot.send_document(
-                    chat_id=user_id,
-                    document=document,
-                    caption=f"✅ Заказ #{order_id}\n\n{item['product_name']}\n\nПоддержка: @shoplogs24support"
-                )
+                with open(file_path, 'rb') as f:
+                    await context.bot.send_document(
+                        chat_id=user_id,
+                        document=f,
+                        caption=f"✅ Заказ #{order_id}\n\n{item['product_name']}\n\nПоддержка: @shoplogs24support"
+                    )
                 os.remove(file_path)
                 files_sent += 1
         

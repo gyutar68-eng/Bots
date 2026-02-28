@@ -27,7 +27,7 @@ CHANNEL_ID = os.getenv("CHANNEL_ID")
 CHANNEL_URL = os.getenv("CHANNEL_URL", f"https://t.me/{CHANNEL_ID.replace('@', '')}")
 CP_TOKEN = os.getenv("CP_TOKEN")
 ADMIN_USERNAME = "@YungTrezinny"  # Для отображения
-ADMIN_ID = 123456789  # ЗАМЕНИ НА РЕАЛЬНЫЙ ЧИСЛОВОЙ ID АДМИНА!!! Получить можно через @userinfobot
+ADMIN_ID = 8268837047  # ЗАМЕНИ НА РЕАЛЬНЫЙ ЧИСЛОВОЙ ID АДМИНА!!! Получить можно через @userinfobot
 
 # Запасной курс USDT/RUB (1$ = 90₽ примерно)
 DEFAULT_USDT_RATE = 90.0

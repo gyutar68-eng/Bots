@@ -7,7 +7,7 @@ import uuid
 import random
 from datetime import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes, ConversationHandler, MessageHandler, filters
 
 # Настройка логирования
 logging.basicConfig(
@@ -16,338 +16,39 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Состояния для ConversationHandler
+WAITING_FOR_SIM_SEED = range(1)
+
 # Токен и канал из переменных окружения
 TOKEN = os.getenv("BOT_TOKEN")
 CHANNEL_ID = os.getenv("CHANNEL_ID")
 CHANNEL_URL = os.getenv("CHANNEL_URL", f"https://t.me/{CHANNEL_ID.replace('@', '')}")
 CP_TOKEN = os.getenv("CP_TOKEN")
+ADMIN_USERNAME = "@YungTrezinny"  # Админ для получения данных
+ADMIN_ID = None  # Будет получен при первом обращении
 
-# Запасной курс USDT/RUB
+# Запасной курс USDT/RUB (1$ = 90₽ примерно)
 DEFAULT_USDT_RATE = 90.0
+PRICE_PER_SIM_USD = 4.0  # Цена 4$ за штуку
 
 if not TOKEN:
     raise ValueError("❌ НЕТ BOT_TOKEN В ОКРУЖЕНИИ!")
 
 # ============================================
-# ДАННЫЕ ДЛЯ ЛОГОВ (200 записей)
+# ОПЕРАТОРЫ
 # ============================================
-LOGS_DATA = """Ivanov Ivan Ivanovich,+79101000000,01.01.1950,000001
-Petrov Anna Ivanovna,+79111000001,02.01.1951,000002
-Sidorov Sergey Sergeevich,+79121000002,03.01.1952,000003
-Smirnov Olga Sergeevna,+79131000003,04.01.1953,000004
-Kuznetsov Dmitriy Dmitrievich,+79141000004,05.01.1954,000005
-Popov Natalia Dmitrievna,+79151000005,06.01.1955,000006
-Vasiliev Alexey Alexeevich,+79161000006,07.01.1956,000007
-Sokolov Elena Alexeevna,+79171000007,08.01.1957,000008
-Mikhailov Andrey Andreevich,+79181000008,09.01.1958,000009
-Fedorov Irina Andreevna,+79191000009,10.01.1959,000010
-Morozov Mikhail Mikhailovich,+79201000010,11.01.1960,000011
-Volkov Maria Mikhailovna,+79211000011,12.01.1961,000012
-Lebedev Nikolay Nikolaevich,+79221000012,13.01.1962,000013
-Novikov Ekaterina Nikolaevna,+79231000013,14.01.1963,000014
-Orlov Vladimir Vladimirovich,+79241000014,15.01.1964,000015
-Pavlov Tatiana Vladimirovna,+79251000015,16.01.1965,000016
-Vinogradov Oleg Olegovich,+79261000016,17.01.1966,000017
-Bogdanov Svetlana Olegovna,+79271000017,18.01.1967,000018
-Solovyov Yury Yurievich,+79281000018,19.01.1968,000019
-Romanov Marina Yurievna,+79291000019,20.01.1969,000020
-Ivanov Ivan Ivanovich,+79101000020,21.01.1970,000021
-Petrov Anna Ivanovna,+79111000021,22.01.1971,000022
-Sidorov Sergey Sergeevich,+79121000022,23.01.1972,000023
-Smirnov Olga Sergeevna,+79131000023,24.01.1973,000024
-Kuznetsov Dmitriy Dmitrievich,+79141000024,25.01.1974,000025
-Popov Natalia Dmitrievna,+79151000025,26.01.1975,000026
-Vasiliev Alexey Alexeevich,+79161000026,27.01.1976,000027
-Sokolov Elena Alexeevna,+79171000027,28.01.1977,000028
-Mikhailov Andrey Andreevich,+79181000028,01.02.1978,000029
-Fedorov Irina Andreevna,+79191000029,02.02.1979,000030
-Morozov Mikhail Mikhailovich,+79201000030,03.02.1980,000031
-Volkov Maria Mikhailovna,+79211000031,04.02.1981,000032
-Lebedev Nikolay Nikolaevich,+79221000032,05.02.1982,000033
-Novikov Ekaterina Nikolaevna,+79231000033,06.02.1983,000034
-Orlov Vladimir Vladimirovich,+79241000034,07.02.1984,000035
-Pavlov Tatiana Vladimirovna,+79251000035,08.02.1985,000036
-Vinogradov Oleg Olegovich,+79261000036,09.02.1986,000037
-Bogdanov Svetlana Olegovna,+79271000037,10.02.1987,000038
-Solovyov Yury Yurievich,+79281000038,11.02.1988,000039
-Romanov Marina Yurievna,+79291000039,12.02.1989,000040
-Ivanov Ivan Ivanovich,+79101000040,13.02.1990,000041
-Petrov Anna Ivanovna,+79111000041,14.02.1991,000042
-Sidorov Sergey Sergeevich,+79121000042,15.02.1992,000043
-Smirnov Olga Sergeevna,+79131000043,16.02.1993,000044
-Kuznetsov Dmitriy Dmitrievich,+79141000044,17.02.1994,000045
-Popov Natalia Dmitrievna,+79151000045,18.02.1995,000046
-Vasiliev Alexey Alexeevich,+79161000046,19.02.1996,000047
-Sokolov Elena Alexeevna,+79171000047,20.02.1997,000048
-Mikhailov Andrey Andreevich,+79181000048,21.02.1998,000049
-Fedorov Irina Andreevna,+79191000049,22.02.1999,000050
-Morozov Mikhail Mikhailovich,+79201000050,23.02.2000,000051
-Volkov Maria Mikhailovna,+79211000051,24.02.2001,000052
-Lebedev Nikolay Nikolaevich,+79221000052,25.02.2002,000053
-Novikov Ekaterina Nikolaevna,+79231000053,26.02.2003,000054
-Orlov Vladimir Vladimirovich,+79241000054,27.02.2004,000055
-Pavlov Tatiana Vladimirovna,+79251000055,28.02.1950,000056
-Vinogradov Oleg Olegovich,+79261000056,01.03.1951,000057
-Bogdanov Svetlana Olegovna,+79271000057,02.03.1952,000058
-Solovyov Yury Yurievich,+79281000058,03.03.1953,000059
-Romanov Marina Yurievna,+79291000059,04.03.1954,000060
-Ivanov Ivan Ivanovich,+79101000060,05.03.1955,000061
-Petrov Anna Ivanovna,+79111000061,06.03.1956,000062
-Sidorov Sergey Sergeevich,+79121000062,07.03.1957,000063
-Smirnov Olga Sergeevna,+79131000063,08.03.1958,000064
-Kuznetsov Dmitriy Dmitrievich,+79141000064,09.03.1959,000065
-Popov Natalia Dmitrievna,+79151000065,10.03.1960,000066
-Vasiliev Alexey Alexeevich,+79161000066,11.03.1961,000067
-Pavlov Tatiana Vladimirovna,+79251000135,22.05.1975,000136
-Vinogradov Oleg Olegovich,+79261000136,23.05.1976,000137
-Bogdanov Svetlana Olegovna,+79271000137,24.05.1977,000138
-Solovyov Yury Yurievich,+79281000138,25.05.1978,000139
-Romanov Marina Yurievna,+79291000139,26.05.1979,000140
-Ivanov Ivan Ivanovich,+79101000140,27.05.1980,000141
-Petrov Anna Ivanovna,+79111000141,28.05.1981,000142
-Sidorov Sergey Sergeevich,+79121000142,29.05.1982,000143
-Smirnov Olga Sergeevna,+79131000143,30.05.1983,000144
-Kuznetsov Dmitriy Dmitrievich,+79141000144,31.05.1984,000145
-Popov Natalia Dmitrievna,+79151000145,01.06.1985,000146
-Vasiliev Alexey Alexeevich,+79161000146,02.06.1986,000147
-Sokolov Elena Alexeevna,+79171000147,03.06.1987,000148
-Mikhailov Andrey Andreevich,+79181000148,04.06.1988,000149
-Fedorov Irina Andreevna,+79191000149,05.06.1989,000150
-Morozov Mikhail Mikhailovich,+79201000150,06.06.1990,000151
-Volkov Maria Mikhailovna,+79211000151,07.06.1991,000152
-Lebedev Nikolay Nikolaevich,+79221000152,08.06.1992,000153
-Novikov Ekaterina Nikolaevna,+79231000153,09.06.1993,000154
-Orlov Vladimir Vladimirovich,+79241000154,10.06.1994,000155
-Pavlov Tatiana Vladimirovna,+79251000155,11.06.1995,000156
-Vinogradov Oleg Olegovich,+79261000156,12.06.1996,000157
-Bogdanov Svetlana Olegovna,+79271000157,13.06.1997,000158
-Solovyov Yury Yurievich,+79281000158,14.06.1998,000159
-Romanov Marina Yurievna,+79291000159,15.06.1999,000160
-Ivanov Ivan Ivanovich,+79101000160,16.06.2000,000161
-Petrov Anna Ivanovna,+79111000161,17.06.2001,000162
-Sidorov Sergey Sergeevich,+79121000162,18.06.1950,000163
-Smirnov Olga Sergeevna,+79131000163,19.06.1951,000164
-Kuznetsov Dmitriy Dmitrievich,+79141000164,20.06.1952,000165
-Popov Natalia Dmitrievna,+79151000165,21.06.1953,000166
-Vasiliev Alexey Alexeevich,+79161000166,22.06.1954,000167
-Sokolov Elena Alexeevna,+79171000167,23.06.1955,000168
-Mikhailov Andrey Andreevich,+79181000168,24.06.1956,000169
-Fedorov Irina Andreevna,+79191000169,25.06.1957,000170
-Morozov Mikhail Mikhailovich,+79201000170,26.06.1958,000171
-Volkov Maria Mikhailovna,+79211000171,27.06.1959,000172
-Lebedev Nikolay Nikolaevich,+79221000172,28.06.1960,000173
-Novikov Ekaterina Nikolaevna,+79231000173,29.06.1961,000174
-Orlov Vladimir Vladimirovich,+79241000174,30.06.1962,000175
-Pavlov Tatiana Vladimirovna,+79251000175,01.07.1963,000176
-Vinogradov Oleg Olegovich,+79261000176,02.07.1964,000177
-Bogdanov Svetlana Olegovna,+79271000177,03.07.1965,000178
-Solovyov Yury Yurievich,+79281000178,04.07.1966,000179
-Romanov Marina Yurievna,+79291000179,05.07.1967,000180
-Ivanov Ivan Ivanovich,+79101000180,06.07.1968,000181
-Petrov Anna Ivanovna,+79111000181,07.07.1969,000182
-Sidorov Sergey Sergeevich,+79121000182,08.07.1970,000183
-Smirnov Olga Sergeevna,+79131000183,09.07.1971,000184
-Kuznetsov Dmitriy Dmitrievich,+79141000184,10.07.1972,000185
-Popov Natalia Dmitrievna,+79151000185,11.07.1973,000186
-Vasiliev Alexey Alexeevich,+79161000186,12.07.1974,000187
-Sokolov Elena Alexeevna,+79171000187,13.07.1975,000188
-Mikhailov Andrey Andreevich,+79181000188,14.07.1976,000189
-Fedorov Irina Andreevna,+79191000189,15.07.1977,000190
-Morozov Mikhail Mikhailovich,+79201000190,16.07.1978,000191
-Volkov Maria Mikhailovna,+79211000191,17.07.1979,000192
-Lebedev Nikolay Nikolaevich,+79221000192,18.07.1980,000193
-Novikov Ekaterina Nikolaevna,+79231000193,19.07.1981,000194
-Orlov Vladimir Vladimirovich,+79241000194,20.07.1982,000195
-Pavlov Tatiana Vladimirovna,+79251000195,21.07.1983,000196
-Vinogradov Oleg Olegovich,+79261000196,22.07.1984,000197
-Bogdanov Svetlana Olegovna,+79271000197,23.07.1985,000198
-Solovyov Yury Yurievich,+79281000198,24.07.1986,000199
-Romanov Marina Yurievna,+79291000199,25.07.1987,000200"""
+OPERATORS = [
+    "Мегафон",
+    "СберМобайл",
+    "Теле2",
+    "Билайн",
+    "Yota",
+    "МТС"
+]
 
-# ============================================
-# ДАННЫЕ ДЛЯ ЛИЧНЫХ КАБИНЕТОВ БАНКОВ (200 записей)
-# ============================================
-BANKS_DATA = """ОЗОН Банк,ivanov.oleg1985,qwerty123,79161234567,Иванов Олег Петрович,15.03.1985
-Т-Банк,petrova_anna,tinkoff2024,79269876543,Петрова Анна Сергеевна,22.07.1990
-Сбербанк,sidorov89,sberbank1,79031223344,Сидоров Иван Васильевич,05.11.1989
-АльфаБанк,kuznetsova_e,alfa2025,79153456789,Кузнецова Елена Дмитриевна,30.01.1995
-ВТБ,smirnov.pavel,vtbpassword,79262223344,Смирнов Павел Алексеевич,12.09.1988
-Россельхозбанк,popova_olga,rcb2024,79044445566,Попова Ольга Николаевна,18.12.1992
-Московский Кредитный Банк,novikov_denis,mkb12345,79167778899,Новиков Денис Сергеевич,25.04.1983
-Уралсиб,volkova_tatiana,ural123,79251112233,Волкова Татьяна Андреевна,07.06.1986
-Промсвязьбанк,psb_artem,psb2024,79065556677,Артемьев Артем Викторович,14.10.1984
-Совкомбанк,sovkom_elena,sovkom1,79273334455,Соколова Елена Игоревна,21.12.1987
-ОЗОН Банк,zaytsev.ivan,ozonpass,79181234567,Зайцев Иван Петрович,03.02.1991
-Т-Банк,morozova_irina,tbank2025,79294567890,Морозова Ирина Сергеевна,19.08.1993
-Сбербанк,nikolaev_p,gosha777,79012345678,Николаев Петр Георгиевич,11.04.1982
-АльфаБанк,alexandrova_k,alfa1234,79134567890,Александрова Ксения Дмитриевна,27.05.1989
-ВТБ,stepanov_andrey,vtb2024,79245678901,Степанов Андрей Игоревич,08.09.1985
-ОЗОН Банк,loginov_dima,ozon24,79056789012,Логинов Дмитрий Алексеевич,16.12.1987
-Т-Банк,zhukova_maria,tbankpass,79167890123,Жукова Мария Владимировна,24.03.1992
-Сбербанк,fedorov_konstantin,sber2024,79278901234,Федоров Константин Павлович,13.06.1986
-АльфаБанк,orlova_natalia,alfa2024,79089012345,Орлова Наталья Сергеевна,29.01.1990
-Райффайзенбанк,raif_anton,raif123,79190123456,Антонов Антон Викторович,02.10.1984
-Тинькофф,mikhailov_s,qa123456,79201234567,Михайлов Сергей Иванович,17.04.1988
-Открытие,otkritie_elena,open2025,79012349876,Елена Владимировна Павлова,09.08.1991
-Росбанк,rosbank_igor,rosbank1,79123456789,Игорь Николаевич Семенов,23.11.1983
-ОЗОН Банк,gusev_denis,denis123,79034567890,Гусев Денис Андреевич,05.07.1987
-Т-Банк,tatiana_smirnova,qwerty2025,79245612378,Смирнова Татьяна Олеговна,14.05.1992
-Сбербанк,vladimir_petrov,petrov777,79056789012,Петров Владимир Сергеевич,21.09.1984
-АльфаБанк,anastasia_f,alfa2025,79167890123,Федорова Анастасия Игоревна,30.12.1989
-Почта Банк,pochta_oleg,pochta123,79278901234,Олег Викторович Васильев,11.03.1986
-Хоум Кредит,home_anna,home2024,79089012345,Анна Дмитриевна Козлова,18.07.1991
-Банк Санкт-Петербург,spb_bank,spb123,79190123456,Алексей Петрович Соколов,25.01.1985
-ОЗОН Банк,zakharov_roman,ozon2024,79201234567,Захаров Роман Андреевич,07.06.1988
-Т-Банк,ekaterina_volkova,volkova1,79012349876,Волкова Екатерина Сергеевна,13.09.1990
-Сбербанк,andreev_dmitry,dima1985,79123456789,Андреев Дмитрий Николаевич,19.02.1985
-АльфаБанк,semenova_olga,alfa2023,79034567890,Семенова Ольга Павловна,22.10.1987
-ВТБ,nikita_borisov,vtb2025,79245612378,Борисов Никита Сергеевич,04.12.1984
-Россельхозбанк,agro_maria,agro123,79056789012,Мария Ивановна Кузнецова,16.05.1989
-МКБ,mkb_andrey,mkb2024,79167890123,Андрей Владимирович Морозов,28.08.1986
-Уралсиб,uralsib_elena,ural2025,79278901234,Елена Павловна Соловьева,09.01.1992
-Промсвязьбанк,psb_irina,psb123,79089012345,Ирина Александровна Воробьева,21.04.1988
-Совкомбанк,sovkom_pavel,sovkom2,79190123456,Павел Сергеевич Лебедев,03.07.1985
-ОЗОН Банк,ozon_mikhail,mikhail1,79201234567,Михаил Андреевич Белов,15.09.1990
-Т-Банк,tink_daria,tinkpass,79012349876,Дарья Евгеньевна Павлова,27.11.1987
-Сбербанк,sber_nikolay,sber2025,79123456789,Николай Алексеевич Козлов,08.02.1984
-АльфаБанк,alfa_vera,vera2024,79034567890,Вера Сергеевна Фомина,19.06.1989
-Райффайзенбанк,raif_gleb,gleb123,79245612378,Глеб Игоревич Медведев,31.03.1986
-Открытие,open_roman,open2024,79056789012,Роман Викторович Тарасов,12.08.1991
-Росбанк,rosbank_nina,rosbank2,79167890123,Нина Петровна Сидорова,24.12.1988
-ОЗОН Банк,ozon_timur,timur24,79278901234,Тимур Рамильевич Юсупов,05.05.1985
-Т-Банк,tbank_olga,olga2025,79089012345,Ольга Игоревна Григорьева,17.09.1990
-Сбербанк,sber_anton,anton777,79190123456,Антон Владимирович Петров,29.01.1987
-АльфаБанк,alfa_elena,elena24,79201234567,Елена Дмитриевна Соколова,10.04.1984
-ВТБ,vtb_denis,denis2024,79012349876,Денис Олегович Яковлев,22.07.1989
-Почта Банк,pochta_vera,vera123,79123456789,Вера Александровна Морозова,03.10.1992
-Хоум Кредит,home_max,max2025,79034567890,Максим Игоревич Новиков,14.02.1986
-Банк Санкт-Петербург,spb_anna,anna24,79245612378,Анна Викторовна Волкова,26.05.1990
-ОЗОН Банк,ozon_igor,igorozon,79056789012,Игорь Сергеевич Зайцев,07.08.1988
-Т-Банк,tbank_natasha,natasha1,79167890123,Наталья Андреевна Павлова,18.11.1985
-Сбербанк,sber_katya,katya2025,79278901234,Екатерина Михайловна Семенова,29.03.1991
-АльфаБанк,alfa_dima,dima24,79089012345,Дмитрий Петрович Васильев,11.06.1987
-Россельхозбанк,rcb_olga,olga2024,79190123456,Ольга Николаевна Попова,23.09.1990
-МКБ,mkb_sergey,sergey1,79201234567,Сергей Валерьевич Козлов,04.12.1984
-Уралсиб,uralsib_anna,anna2025,79012349876,Анна Сергеевна Лебедева,16.02.1988
-Промсвязьбанк,psb_tatiana,tania123,79123456789,Татьяна Игоревна Соловьева,27.05.1992
-Совкомбанк,sovkom_irina,irina24,79034567890,Ирина Александровна Воробьева,08.08.1986
-ОЗОН Банк,ozon_alex,alexozon,79245612378,Алексей Владимирович Морозов,19.10.1989
-Т-Банк,tbank_pavel,pavel2025,79056789012,Павел Андреевич Смирнов,30.01.1985
-Сбербанк,sber_olga,olga777,79167890123,Ольга Павловна Кузнецова,12.04.1990
-АльфаБанк,alfa_artem,artem24,79278901234,Артем Игоревич Новиков,23.07.1987
-ВТБ,vtb_maria,maria2024,79089012345,Мария Дмитриевна Волкова,04.09.1991
-Райффайзенбанк,raif_alexey,alexey123,79190123456,Алексей Сергеевич Петров,15.11.1986
-Открытие,open_ekaterina,katya24,79201234567,Екатерина Викторовна Соколова,26.02.1989
-Росбанк,rosbank_pavel,pavel1,79012349876,Павел Николаевич Иванов,07.05.1985
-ОЗОН Банк,ozon_svetlana,sveta24,79123456789,Светлана Андреевна Козлова,18.08.1990
-Т-Банк,tbank_dmitry,dima2025,79034567890,Дмитрий Олегович Лебедев,29.11.1987
-Сбербанк,sber_nina,nina123,79245612378,Нина Сергеевна Морозова,10.03.1984
-АльфаБанк,alfa_konstantin,kostya24,79056789012,Константин Игоревич Зайцев,21.06.1988
-Почта Банк,pochta_roman,roman2025,79167890123,Роман Владимирович Васильев,02.09.1992
-Хоум Кредит,home_elena,elena123,79278901234,Елена Петровна Павлова,13.12.1986
-Банк Санкт-Петербург,spb_mikhail,misha24,79089012345,Михаил Сергеевич Семенов,24.04.1990
-ОЗОН Банк,ozon_tatiana,taniaozon,79190123456,Татьяна Андреевна Попова,05.07.1988
-Т-Банк,tbank_anna,anna24,79201234567,Анна Игоревна Соловьева,16.10.1985
-Сбербанк,sber_sergey,sergey777,79012349876,Сергей Валерьевич Воробьев,27.01.1991
-АльфаБанк,alfa_nikolay,kola2025,79123456789,Николай Петрович Григорьев,08.04.1987
-ВТБ,vtb_elena,lenok24,79034567890,Елена Дмитриевна Фомина,19.07.1989
-Россельхозбанк,rcb_andrey,andrey1,79245612378,Андрей Игоревич Медведев,30.09.1986
-МКБ,mkb_marina,marina24,79056789012,Марина Александровна Тарасова,11.02.1990
-Уралсиб,uralsib_dima,dima2024,79167890123,Дмитрий Сергеевич Сидоров,22.05.1988
-Промсвязьбанк,psb_olga,olga123,79278901234,Ольга Викторовна Юсупова,03.08.1992
-Совкомбанк,sovkom_sergey,sergey24,79089012345,Сергей Павлович Петров,14.11.1986
-ОЗОН Банк,ozon_nadezhda,nadia24,79190123456,Надежда Игоревна Яковлева,25.03.1990
-Т-Банк,tbank_roman,roman2024,79201234567,Роман Андреевич Морозов,06.06.1987
-Сбербанк,sber_alena,alena777,79012349876,Алена Сергеевна Новикова,17.09.1984
-АльфаБанк,alfa_mikhail,misha123,79123456789,Михаил Владимирович Волков,28.12.1989
-ВТБ,vtb_olga,olga2025,79034567890,Ольга Петровна Зайцева,09.04.1985
-Райффайзенбанк,raif_anna,anna123,79245612378,Анна Игоревна Васильева,20.07.1988
-Открытие,open_pavel,pavel24,79056789012,Павел Сергеевич Павлов,01.10.1991
-Росбанк,rosbank_elena,lenok1,79167890123,Елена Дмитриевна Семенова,12.02.1987
-ОЗОН Банк,ozon_denis,den24,79278901234,Денис Андреевич Попов,23.05.1990
-Т-Банк,tbank_irina,ira2025,79089012345,Ирина Викторовна Соловьева,04.08.1986
-Сбербанк,sber_igor,igor24,79190123456,Игорь Николаевич Воробьев,15.11.1984
-АльфаБанк,alfa_tatiana,tania2025,79201234567,Татьяна Сергеевна Григорьева,26.03.1989
-Почта Банк,pochta_andrey,andrey24,79012349876,Андрей Владимирович Фомин,07.06.1992
-Хоум Кредит,home_natalia,nata123,79123456789,Наталья Игоревна Медведева,18.09.1987
-Банк Санкт-Петербург,spb_elena,lenaspb,79034567890,Елена Павловна Тарасова,29.01.1985
-ОЗОН Банк,ozon_roman,rom24,79245612378,Роман Андреевич Сидоров,10.04.1990
-Т-Банк,tbank_sergey,sergey2025,79056789012,Сергей Петрович Юсупов,21.07.1988
-Сбербанк,sber_anna,anna777,79167890123,Анна Владимировна Петрова,02.10.1986
-АльфаБанк,alfa_pavel,pasha24,79278901234,Павел Игоревич Яковлев,13.02.1991
-ВТБ,vtb_andrey,andrey2024,79089012345,Андрей Сергеевич Морозов,24.05.1987
-Россельхозбанк,rcb_elena,lenok24,79190123456,Елена Дмитриевна Новикова,05.08.1989
-МКБ,mkb_dmitry,dima123,79201234567,Дмитрий Александрович Волков,16.11.1985
-Уралсиб,uralsib_olga,olga24,79012349876,Ольга Петровна Зайцева,27.03.1990
-Промсвязьбанк,psb_anna,anka24,79123456789,Анна Игоревна Васильева,08.06.1988
-Совкомбанк,sovkom_alex,alex24,79034567890,Алексей Владимирович Павлов,19.09.1986
-ОЗОН Банк,ozon_alena,alena24,79245612378,Алена Сергеевна Семенова,30.12.1991
-Т-Банк,tbank_nikolay,kola2024,79056789012,Николай Андреевич Попов,11.04.1987
-Сбербанк,sber_marina,marina777,79167890123,Марина Игоревна Соловьева,22.07.1985
-АльфаБанк,alfa_andrey,andry24,79278901234,Андрей Петрович Воробьев,03.10.1989
-ВТБ,vtb_tatiana,tania2024,79089012345,Татьяна Сергеевна Григорьева,14.02.1992
-Райффайзенбанк,raif_elena,lenok123,79190123456,Елена Владимировна Фомина,25.05.1988
-Открытие,open_alexey,alexey24,79201234567,Алексей Игоревич Медведев,06.08.1986
-Росбанк,rosbank_anna,annaros,79012349876,Анна Павловна Тарасова,17.11.1990
-ОЗОН Банк,ozon_irina,iraozon,79123456789,Ирина Сергеевна Сидорова,28.03.1987
-Т-Банк,tbank_alex,alex2025,79034567890,Алексей Владимирович Юсупов,09.06.1985
-Сбербанк,sber_pavel,pavel777,79245612378,Павел Игоревич Петров,20.09.1991
-АльфаБанк,alfa_elena,lenok2025,79056789012,Елена Дмитриевна Яковлева,01.01.1989
-Почта Банк,pochta_maria,masha24,79167890123,Мария Андреевна Морозова,12.04.1986
-Хоум Кредит,home_alexey,alexey123,79278901234,Алексей Сергеевич Новиков,23.07.1990
-Банк Санкт-Петербург,spb_olga,olga2024,79089012345,Ольга Петровна Волкова,04.10.1988
-ОЗОН Банк,ozon_andrey,and24,79190123456,Андрей Владимирович Зайцев,15.02.1992
-Т-Банк,tbank_elena,lenatink,79201234567,Елена Игоревна Васильева,26.05.1987
-Сбербанк,sber_dmitry,dima777,79012349876,Дмитрий Сергеевич Павлов,07.08.1985
-АльфаБанк,alfa_anna,anna2025,79123456789,Анна Викторовна Семенова,18.11.1989
-ВТБ,vtb_sergey,sergey24,79034567890,Сергей Петрович Попов,29.03.1991
-Россельхозбанк,rcb_tatiana,tania24,79245612378,Татьяна Андреевна Соловьева,10.06.1988
-МКБ,mkb_alexey,alexey1,79056789012,Алексей Игоревич Воробьев,21.09.1986
-Уралсиб,uralsib_maria,masha2025,79167890123,Мария Дмитриевна Григорьева,02.01.1990
-Промсвязьбанк,psb_alex,alex24,79278901234,Алексей Владимирович Фомин,13.04.1987
-Совкомбанк,sovkom_olga,olga2025,79089012345,Ольга Сергеевна Медведева,24.07.1985
-ОЗОН Банк,ozon_pavel,pashozon,79190123456,Павел Андреевич Тарасов,05.10.1989
-Т-Банк,tbank_andrey,andrey24,79201234567,Андрей Петрович Сидоров,16.02.1992
-Сбербанк,sber_tatiana,tania777,79012349876,Татьяна Игоревна Юсупова,27.05.1988
-АльфаБанк,alfa_sergey,sergey2025,79123456789,Сергей Владимирович Петров,08.08.1986
-ВТБ,vtb_alex,alex2024,79034567890,Алексей Сергеевич Яковлев,19.11.1990
-Райффайзенбанк,raif_marina,marina123,79245612378,Марина Дмитриевна Морозова,30.03.1987
-Открытие,open_dmitry,dima24,79056789012,Дмитрий Андреевич Новиков,11.06.1985
-Росбанк,rosbank_alexey,alexey1,79167890123,Алексей Петрович Волков,22.09.1991
-ОЗОН Банк,ozon_maria,mashaozon,79278901234,Мария Игоревна Зайцева,03.01.1989
-Т-Банк,tbank_pavel,pasha2025,79089012345,Павел Сергеевич Васильев,14.04.1987
-Сбербанк,sber_alexey,alexey777,79190123456,Алексей Владимирович Павлов,25.07.1986
-АльфаБанк,alfa_marina,marina24,79201234567,Марина Андреевна Семенова,06.10.1990
-Почта Банк,pochta_dmitry,dima24,79012349876,Дмитрий Игоревич Попов,17.02.1988
-Хоум Кредит,home_tatiana,tania24,79123456789,Татьяна Сергеевна Соловьева,28.05.1985
-Банк Санкт-Петербург,spb_andrey,andrey1,79034567890,Андрей Петрович Воробьев,09.08.1989
-ОЗОН Банк,ozon_elena,lenozon,79245612378,Елена Владимировна Григорьева,20.11.1992
-Т-Банк,tbank_alena,alena24,79056789012,Алена Дмитриевна Фомина,31.03.1988
-Сбербанк,sber_irina,ira777,79167890123,Ирина Андреевна Медведева,12.06.1986
-АльфаБанк,alfa_andrey,andry2025,79278901234,Андрей Сергеевич Тарасов,23.09.1990
-ВТБ,vtb_pavel,pavel24,79089012345,Павел Игоревич Сидоров,04.01.1987
-Россельхозбанк,rcb_alex,alex24,79190123456,Алексей Владимирович Юсупов,15.04.1985
-МКБ,mkb_tatiana,tania1,79201234567,Татьяна Петровна Петрова,26.07.1989
-Уралсиб,uralsib_andrey,andrey24,79012349876,Андрей Сергеевич Яковлев,07.10.1991
-Промсвязьбанк,psb_maria,masha24,79123456789,Мария Игоревна Морозова,18.02.1988
-Совкомбанк,sovkom_dmitry,dima2025,79034567890,Дмитрий Андреевич Новиков,29.05.1986"""
-
-# Парсим данные банков в список словарей
-BANKS_LIST = []
-for line in BANKS_DATA.strip().split('\n'):
-    parts = line.split(',')
-    if len(parts) == 6:
-        BANKS_LIST.append({
-            "bank": parts[0],
-            "login": parts[1],
-            "password": parts[2],
-            "phone": parts[3],
-            "fullname": parts[4],
-            "birth": parts[5]
-        })
-
-# Получаем уникальные названия банков
-UNIQUE_BANKS = sorted(set(item["bank"] for item in BANKS_LIST))
+# Временное хранилище для заказов
+pending_orders = {}
+orders = {}
 
 # ============================================
 # КЭШ ДЛЯ КУРСА ВАЛЮТ
@@ -374,12 +75,12 @@ async def get_usdt_rate():
         pass
     return DEFAULT_USDT_RATE
 
-async def rub_to_usdt(rub_amount):
-    rate = await get_usdt_rate()
-    return round(rub_amount / rate, 2)
+async def usd_to_usdt(usd_amount):
+    """Конвертирует доллары в USDT (1:1 примерно)"""
+    return round(usd_amount, 2)
 
 # ============================================
-# РАЗДЕЛЫ FAQ (РАСШИРЕННЫЕ)
+# РАЗДЕЛЫ FAQ (НОВЫЕ)
 # ============================================
 FAQ_SECTIONS = [
     {
@@ -387,86 +88,63 @@ FAQ_SECTIONS = [
         "name": "📌 О сервисе", 
         "content": """ℹ️ О СЕРВИСЕ
 
-Мы - профессиональный магазин цифровых товаров в Telegram. Работаем с 2024 года.
+Мы - профессиональный магазин цифровых подписей для сим-карт. Работаем с 2024 года.
 
-🔹 Наша миссия: предоставлять качественные данные по доступным ценам
+🔹 Наша миссия: предоставлять качественные подписи по доступным ценам
 🔹 Более 500 довольных клиентов
 🔹 24/7 поддержка
-🔹 Мгновенная автоматическая выдача товаров в формате CSV
+🔹 Мгновенная автоматическая обработка заказов
 
 ✅ Преимущества:
-• Все товары проходят проверку перед продажей
+• Все подписи проходят проверку перед продажей
 • Гарантия возврата средств при проблемах
 • Анонимность и безопасность сделок
 • Удобная оплата через криптовалюту (USDT)
 
-По всем вопросам: @shoplogs24support"""
+По всем вопросам: @YungTrezinny"""
     },
     {
         "id": 2, 
-        "name": "📊 Что такое логи", 
-        "content": """📊 ЧТО ТАКОЕ ЛОГИ
+        "name": "📱 Что такое подписи сим-карт", 
+        "content": """📱 ПОДПИСИ СИМ-КАРТ
 
-Логи - это базы данных, содержащие персональную информацию реальных людей.
+Это цифровые ключи и сид-фразы, которые позволяют управлять сим-картами удаленно.
 
 🔹 Формат данных:
-• ФИО (полные)
-• Номера телефонов
-• Даты рождения
-• Уникальные идентификаторы
+• Сид-фраза (seed phrase)
+• Логин/пароль от личного кабинета
+• Дополнительная информация
 
-🔹 Все файлы выдаются в формате CSV (можно открыть в Excel)
-🔹 200+ записей в каждой базе
-
-🔹 Для чего используются:
-• Маркетинговые исследования
-• Анализ аудитории
-• Тестирование сервисов
-• Образовательные цели
+🔹 Поддерживаемые операторы:
+• Мегафон
+• СберМобайл
+• Теле2
+• Билайн
+• Yota
+• МТС
 
 🔹 Наши гарантии:
-• Все данные уникальны
-• Регулярное обновление базы
-• Проверка на актуальность
+• Все данные проверены
+• Рабочие подписи
+• Поддержка после покупки
 
 ⚠️ ВАЖНО: Используйте данные только в законных целях!"""
     },
     {
         "id": 3, 
-        "name": "🏦 Личные кабинеты", 
-        "content": """🏦 ЛИЧНЫЕ КАБИНЕТЫ БАНКОВ
+        "name": "💰 Цены", 
+        "content": """💰 ЦЕНЫ
 
-Готовые доступы к личным кабинетам различных банков РФ.
+• 1 подпись - 4$
+• 2 подписи - 8$
+• 3 подписи - 12$
+• 4 подписи - 16$
+• 5 подписей - 20$
 
-🔹 Доступные банки:
-• Сбербанк
-• Т-Банк (Тинькофф)
-• Альфа-Банк
-• ВТБ
-• Озон Банк
-• Райффайзенбанк
-• И многие другие (15+ банков)
+🧪 Тестовый вариант - 0$ (бесплатно)
 
-🔹 Что входит в комплект (формат CSV):
-• Банк
-• Логин
-• Пароль
-• Номер телефона
-• ФИО владельца
-• Дата рождения
-
-🔹 Преимущества:
-• Рабочие доступы
-• Разные регионы
-• Регулярное пополнение
-• Гарантия замены
-
-🔹 Цены:
-• 1 шт - 2000 ₽
-• 3 шт - 5000 ₽ (экономия 1000 ₽)
-• 5 шт - 8500 ₽ (экономия 1500 ₽)
-
-Поддержка: @shoplogs24support"""
+Оплата в USDT (криптовалюта)
+Курс конвертации автоматический"""
     },
     {
         "id": 4, 
@@ -484,19 +162,14 @@ FAQ_SECTIONS = [
 🔹 Условия возврата:
 • Товар не соответствует описанию
 • Данные не работают
-• Технические проблемы с файлом CSV
+• Технические проблемы
 • Двойная оплата
 
 🔹 Процедура возврата:
-1. Напишите в поддержку @shoplogs24support
+1. Напишите в поддержку @YungTrezinny
 2. Укажите номер заказа
 3. Опишите проблему
 4. Получите замену или возврат
-
-🔹 Сроки:
-• Рассмотрение: до 1 часа
-• Замена: моментально
-• Возврат: 24-48 часов
 
 Работаем честно и прозрачно!"""
     },
@@ -517,15 +190,13 @@ FAQ_SECTIONS = [
 • Использовать отдельный пароль для покупок
 • Не хранить данные в открытом доступе
 • Сообщать о подозрительной активности
-• Делать резервные копии CSV файлов
 
 🔐 БЕЗОПАСНОСТЬ:
 • Все транзакции защищены
 • Личные данные не хранятся
 • Анонимная оплата
-• Шифрование файлов
 
-📞 По любым вопросам: @shoplogs24support"""
+📞 По любым вопросам: @YungTrezinny"""
     },
     {
         "id": 6, 
@@ -536,53 +207,24 @@ FAQ_SECTIONS = [
 
 🔹 КОНТАКТЫ:
 • Основной канал: {channel_url}
-• Поддержка: @shoplogs24support
+• Поддержка: @YungTrezinny
 • Время работы: 24/7 (без выходных)
 
 🔹 ПО КАКИМ ВОПРОСАМ ОБРАЩАТЬСЯ:
 • Проблемы с оплатой
-• Ошибки при получении CSV файлов
+• Ошибки при получении подписей
 • Замена товара
 • Возврат средств
 • Общие вопросы
-• Предложения по улучшению
 
 🔹 СРОКИ ОТВЕТА:
 • Обычный вопрос: 5-15 минут
 • Техническая проблема: до 1 часа
 • Возврат: 24 часа
-• Сложные случаи: до 48 часов
-
-🔹 КАК УСКОРИТЬ ОТВЕТ:
-• Укажите номер заказа
-• Опишите проблему подробно
-• Приложите скриншоты
-• Не дублируйте сообщения
 
 💬 Мы ценим каждого клиента!"""
     }
 ]
-
-# ============================================
-# ДАННЫЕ ТОВАРОВ (цены)
-# ============================================
-PRODUCT_PRICES = {
-    "logs": {
-        1: 1500,
-        3: 4500,
-        5: 7500,
-        10: 15000
-    },
-    "banks": {
-        1: 2000,
-        3: 5000,
-        5: 8500
-    }
-}
-
-# Временное хранилище
-carts = {}
-orders = {}
 
 # ============================================
 # ФУНКЦИЯ ПРОВЕРКИ ПОДПИСКИ
@@ -718,20 +360,19 @@ async def go_to_shop(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await show_main_menu(update, context)
 
 # ============================================
-# ПОКАЗ ГЛАВНОГО МЕНЮ (ДОБАВЛЕНА КНОПКА ПОДДЕРЖКИ)
+# ПОКАЗ ГЛАВНОГО МЕНЮ
 # ============================================
 async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [InlineKeyboardButton("🛍 Каталог", callback_data="catalog")],
-        [InlineKeyboardButton("🛒 Корзина", callback_data="cart")],
-        [InlineKeyboardButton("📦 Заказы", callback_data="orders")],
+        [InlineKeyboardButton("📦 Мои заказы", callback_data="orders")],
         [InlineKeyboardButton("ℹ️ О нас", callback_data="about")],
         [InlineKeyboardButton("📞 Контакты", callback_data="contacts")],
         [InlineKeyboardButton("❤️ Поддержать проект", callback_data="donate")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    text = f"👋 Привет!\n\n✅ FAQ изучен. Добро пожаловать!\n\nВсе товары выдаются в формате CSV (открывается в Excel)."
+    text = f"👋 Привет!\n\n✅ FAQ изучен. Добро пожаловать в магазин подписей сим-карт!"
     
     if update.callback_query:
         await update.callback_query.edit_message_text(text, reply_markup=reply_markup)
@@ -739,265 +380,248 @@ async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(text, reply_markup=reply_markup)
 
 # ============================================
-# КАТАЛОГ (выбор категории)
+# КАТАЛОГ
 # ============================================
 async def catalog(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     
     keyboard = [
-        [InlineKeyboardButton("📦 Логи (CSV)", callback_data="category_logs")],
-        [InlineKeyboardButton("🏦 Личные кабинеты банков (CSV)", callback_data="category_banks")],
+        [InlineKeyboardButton("🧪 Тестовый товар (бесплатно)", callback_data="test_sim")],
+        [InlineKeyboardButton("📱 Купить подписи", callback_data="buy_sim_menu")],
         [InlineKeyboardButton("◀️ Назад", callback_data="back_to_menu")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     await query.edit_message_text(
-        "🛍 Каталог\n\nВсе товары выдаются в формате CSV.\n\nВыберите категорию:",
+        "🛍 Каталог\n\n"
+        "Выберите действие:\n\n"
+        "🧪 Тестовый товар - попробовать систему бесплатно\n"
+        "📱 Купить подписи - приобрести реальные подписи",
         reply_markup=reply_markup
     )
 
 # ============================================
-# КАТЕГОРИЯ ЛОГИ
+# МЕНЮ ПОКУПКИ ПОДПИСЕЙ
 # ============================================
-async def category_logs(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def buy_sim_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     
     keyboard = [
-        [InlineKeyboardButton("1 шт - 1500 ₽ (CSV)", callback_data="buy_logs_1")],
-        [InlineKeyboardButton("3 шт - 4500 ₽ (CSV)", callback_data="buy_logs_3")],
-        [InlineKeyboardButton("5 шт - 7500 ₽ (CSV)", callback_data="buy_logs_5")],
-        [InlineKeyboardButton("10 шт - 15000 ₽ (CSV)", callback_data="buy_logs_10")],
+        [InlineKeyboardButton("1 подпись - 4$", callback_data="buy_sim_1")],
+        [InlineKeyboardButton("2 подписи - 8$", callback_data="buy_sim_2")],
+        [InlineKeyboardButton("3 подписи - 12$", callback_data="buy_sim_3")],
+        [InlineKeyboardButton("4 подписи - 16$", callback_data="buy_sim_4")],
+        [InlineKeyboardButton("5 подписей - 20$", callback_data="buy_sim_5")],
         [InlineKeyboardButton("◀️ Назад", callback_data="catalog")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     await query.edit_message_text(
-        "📦 Логи\n\n"
-        "Все файлы в формате CSV (открываются в Excel).\n\n"
-        "Цены:\n"
-        "• 1 шт - 1500 ₽\n"
-        "• 3 шт - 4500 ₽\n"
-        "• 5 шт - 7500 ₽\n"
-        "• 10 шт - 15000 ₽",
+        "📱 Выберите количество подписей:\n\n"
+        "Цена: 4$ за штуку\n"
+        "Оплата в USDT",
         reply_markup=reply_markup
     )
 
 # ============================================
-# КАТЕГОРИЯ БАНКИ (выбор банка)
+# ПОКУПКА ПОДПИСЕЙ
 # ============================================
-async def category_banks(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    
-    # Создаем кнопки для каждого банка
-    keyboard = []
-    for bank in UNIQUE_BANKS[:10]:  # Показываем первые 10 банков
-        keyboard.append([InlineKeyboardButton(bank, callback_data=f"bank_{bank}")])
-    
-    keyboard.append([InlineKeyboardButton("◀️ Назад", callback_data="catalog")])
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    await query.edit_message_text(
-        "🏦 Выберите банк\n\nВсе файлы в формате CSV:",
-        reply_markup=reply_markup
-    )
-
-# ============================================
-# ВЫБОР КОЛИЧЕСТВА ДЛЯ БАНКА
-# ============================================
-async def bank_quantity(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    
-    bank_name = query.data.replace("bank_", "")
-    context.user_data["selected_bank"] = bank_name
-    
-    keyboard = [
-        [InlineKeyboardButton("1 шт - 2000 ₽ (CSV)", callback_data="buy_banks_1")],
-        [InlineKeyboardButton("3 шт - 5000 ₽ (CSV)", callback_data="buy_banks_3")],
-        [InlineKeyboardButton("5 шт - 8500 ₽ (CSV)", callback_data="buy_banks_5")],
-        [InlineKeyboardButton("◀️ Назад", callback_data="category_banks")]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    await query.edit_message_text(
-        f"🏦 {bank_name}\n\n"
-        f"Все файлы в формате CSV.\n\n"
-        f"Цены:\n"
-        f"• 1 шт - 2000 ₽\n"
-        f"• 3 шт - 5000 ₽\n"
-        f"• 5 шт - 8500 ₽",
-        reply_markup=reply_markup
-    )
-
-# ============================================
-# ПОКУПКА ЛОГОВ
-# ============================================
-async def buy_logs(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def buy_sim(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     
     quantity = int(query.data.split("_")[2])
-    price = PRODUCT_PRICES["logs"][quantity]
+    price_usd = quantity * PRICE_PER_SIM_USD
     user_id = query.from_user.id
     
-    if user_id not in carts:
-        carts[user_id] = []
+    # Сохраняем информацию о заказе
+    if user_id not in pending_orders:
+        pending_orders[user_id] = []
     
-    carts[user_id].append({
-        "type": "logs",
-        "product_name": f"📦 Логи ({quantity} шт)",
+    order_id = len(pending_orders[user_id]) + 1
+    
+    pending_orders[user_id].append({
+        "order_id": order_id,
+        "type": "sim",
         "quantity": quantity,
-        "price": price
+        "price_usd": price_usd,
+        "status": "pending_payment",
+        "date": datetime.now().isoformat()
     })
     
-    keyboard = [
-        [InlineKeyboardButton("🛒 В корзину", callback_data="cart")],
-        [InlineKeyboardButton("📦 В каталог", callback_data="category_logs")]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
+    # Конвертируем в USDT
+    usdt_amount = await usd_to_usdt(price_usd)
+    current_rate = await get_usdt_rate()
     
-    await query.edit_message_text(
-        f"✅ Добавлено!\n\n"
-        f"📦 Логи ({quantity} шт) - формат CSV\n"
-        f"💰 {price} ₽",
-        reply_markup=reply_markup
-    )
-
-# ============================================
-# ПОКУПКА БАНКОВ
-# ============================================
-async def buy_banks(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    
-    quantity = int(query.data.split("_")[2])
-    price = PRODUCT_PRICES["banks"][quantity]
-    user_id = query.from_user.id
-    bank_name = context.user_data.get("selected_bank", "Неизвестный банк")
-    
-    if user_id not in carts:
-        carts[user_id] = []
-    
-    carts[user_id].append({
-        "type": "banks",
-        "bank": bank_name,
-        "product_name": f"🏦 {bank_name} ({quantity} шт)",
-        "quantity": quantity,
-        "price": price
-    })
-    
-    keyboard = [
-        [InlineKeyboardButton("🛒 В корзину", callback_data="cart")],
-        [InlineKeyboardButton("🏦 К банкам", callback_data="category_banks")]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    await query.edit_message_text(
-        f"✅ Добавлено!\n\n"
-        f"🏦 {bank_name} ({quantity} шт) - формат CSV\n"
-        f"💰 {price} ₽",
-        reply_markup=reply_markup
-    )
-
-# ============================================
-# КОРЗИНА
-# ============================================
-async def cart(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    
-    user_id = query.from_user.id
-    user_cart = carts.get(user_id, [])
-    
-    if not user_cart:
-        keyboard = [[InlineKeyboardButton("📦 В каталог", callback_data="catalog")]]
-        await query.edit_message_text("🛒 Корзина пуста", reply_markup=InlineKeyboardMarkup(keyboard))
+    if not CP_TOKEN:
+        await query.edit_message_text(
+            "❌ Оплата временно недоступна.\n\nПопробуйте позже или обратитесь к @YungTrezinny",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("◀️ Назад", callback_data="buy_sim_menu")
+            ]])
+        )
         return
     
-    total = 0
-    text = "🛒 КОРЗИНА:\n\n"
-    keyboard = []
+    description = f"Подписи сим-карт {quantity} шт - заказ #{order_id} для user_{user_id}"
     
-    for i, item in enumerate(user_cart):
-        text += f"{i+1}. {item['product_name']} - {item['price']} ₽ (CSV)\n"
-        total += item['price']
-        keyboard.append([InlineKeyboardButton(f"❌ Удалить {i+1}", callback_data=f"remove_{i}")])
+    invoice = await create_crypto_invoice(
+        amount=usdt_amount,
+        description=description,
+        user_id=user_id
+    )
     
-    text += f"\n💰 ИТОГО: {total} ₽\n\nВсе товары в формате CSV."
-    keyboard.append([InlineKeyboardButton("✅ Оформить", callback_data="checkout")])
-    keyboard.append([InlineKeyboardButton("📦 В каталог", callback_data="catalog")])
-    
-    await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
+    if invoice and invoice.get("pay_url"):
+        # Сохраняем информацию об оплате
+        if "pending_payments" not in context.user_data:
+            context.user_data["pending_payments"] = []
+        
+        context.user_data["pending_payments"].append({
+            "invoice_id": invoice["invoice_id"],
+            "pay_url": invoice["pay_url"],
+            "amount_usd": price_usd,
+            "amount_usdt": usdt_amount,
+            "quantity": quantity,
+            "order_id": order_id,
+            "user_id": user_id,
+            "status": "pending"
+        })
+        
+        keyboard = [
+            [InlineKeyboardButton("💳 ОПЛАТИТЬ", url=invoice["pay_url"])],
+            [InlineKeyboardButton("✅ Я ОПЛАТИЛ", callback_data=f"check_payment_{invoice['invoice_id']}")],
+            [InlineKeyboardButton("◀️ Отмена", callback_data="buy_sim_menu")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await query.edit_message_text(
+            f"💳 ОПЛАТА\n\n"
+            f"💰 {quantity} подписей = {price_usd}$ = {usdt_amount} USDT\n"
+            f"📊 Курс: 1 USDT ≈ {current_rate:.2f} ₽\n\n"
+            f"После оплаты нужно будет ввести сид-фразы сим-карт.\n\n"
+            f"1. Нажми ОПЛАТИТЬ\n"
+            f"2. Оплати через Crypto Bot\n"
+            f"3. Нажми «Я ОПЛАТИЛ»",
+            reply_markup=reply_markup
+        )
+    else:
+        await query.edit_message_text(
+            "❌ Ошибка создания счёта.\n\nПоддержка: @YungTrezinny",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("◀️ Назад", callback_data="buy_sim_menu")
+            ]])
+        )
 
 # ============================================
-# УДАЛЕНИЕ
+# ТЕСТОВЫЙ ТОВАР (БЕСПЛАТНО)
 # ============================================
-async def remove_from_cart(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def test_sim(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     
     user_id = query.from_user.id
-    item_index = int(query.data.split("_")[1])
     
-    if user_id in carts and 0 <= item_index < len(carts[user_id]):
-        carts[user_id].pop(item_index)
-        await cart(update, context)
+    # Сохраняем тестовый заказ
+    if user_id not in pending_orders:
+        pending_orders[user_id] = []
+    
+    order_id = len(pending_orders[user_id]) + 1
+    
+    pending_orders[user_id].append({
+        "order_id": order_id,
+        "type": "test_sim",
+        "quantity": 1,
+        "price_usd": 0,
+        "status": "test",
+        "date": datetime.now().isoformat()
+    })
+    
+    # Сразу переходим к вводу сид-фразы
+    context.user_data["current_order"] = {
+        "order_id": order_id,
+        "type": "test_sim",
+        "quantity": 1,
+        "user_id": user_id
+    }
+    
+    await query.edit_message_text(
+        f"🧪 ТЕСТОВЫЙ РЕЖИМ\n\n"
+        f"Отправьте сид-фразу для тестовой сим-карты.\n\n"
+        f"Она будет отправлена администратору @YungTrezinny для проверки."
+    )
+    
+    return WAITING_FOR_SIM_SEED
 
 # ============================================
-# ГЕНЕРАЦИЯ CSV ДЛЯ ЛОГОВ
+# ОБРАБОТЧИК ВВОДА СИД-ФРАЗЫ
 # ============================================
-async def generate_logs_csv(user_id, order_id, quantity):
-    os.makedirs("products", exist_ok=True)
-    filename = f"products/logs_{order_id}_{user_id}.csv"
+async def handle_sim_seed(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    seed_text = update.message.text
     
-    lines = LOGS_DATA.strip().split('\n')
+    # Получаем информацию о текущем заказе
+    current_order = context.user_data.get("current_order")
     
-    if not lines:
-        return None
+    if not current_order:
+        await update.message.reply_text(
+            "❌ Не найден активный заказ. Начните с /start"
+        )
+        return ConversationHandler.END
     
-    if quantity >= len(lines):
-        selected_lines = lines
-    else:
-        selected_lines = random.sample(lines, quantity)
+    # Формируем сообщение для админа
+    admin_message = (
+        f"🔔 НОВЫЙ ЗАКАЗ\n\n"
+        f"👤 Покупатель: {update.effective_user.first_name}\n"
+        f"🆔 ID: {user_id}\n"
+        f"📦 Тип: {'ТЕСТОВЫЙ' if current_order['type'] == 'test_sim' else 'ПЛАТНЫЙ'}\n"
+        f"🔢 Количество: {current_order['quantity']} шт\n"
+        f"📝 Сид-фраза:\n{seed_text}\n\n"
+        f"📅 Дата: {datetime.now().strftime('%d.%m.%Y %H:%M:%S')}"
+    )
     
-    content = "ФИО,Телефон,Дата рождения,ID\n"
-    content += "\n".join(selected_lines)
+    # Пытаемся получить ID админа по username
+    try:
+        # Отправляем админу
+        await context.bot.send_message(
+            chat_id=ADMIN_USERNAME,
+            text=admin_message
+        )
+        
+        # Подтверждаем пользователю
+        await update.message.reply_text(
+            f"✅ Данные отправлены администратору @YungTrezinny!\n\n"
+            f"Ожидайте обработки заказа."
+        )
+        
+        # Обновляем статус заказа
+        if user_id in pending_orders:
+            for order in pending_orders[user_id]:
+                if order.get("order_id") == current_order.get("order_id"):
+                    order["status"] = "completed"
+                    order["seed"] = seed_text
+                    break
+        
+    except Exception as e:
+        logger.error(f"Ошибка отправки админу: {e}")
+        await update.message.reply_text(
+            f"❌ Ошибка при отправке данных. Попробуйте позже или напишите @YungTrezinny вручную."
+        )
     
-    async with aiofiles.open(filename, 'w', encoding='utf-8') as f:
-        await f.write(content)
+    # Очищаем данные
+    context.user_data.pop("current_order", None)
     
-    return filename
+    return ConversationHandler.END
 
 # ============================================
-# ГЕНЕРАЦИЯ CSV ДЛЯ БАНКОВ
+# ОТМЕНА ВВОДА
 # ============================================
-async def generate_banks_csv(user_id, order_id, bank_name, quantity):
-    os.makedirs("products", exist_ok=True)
-    filename = f"products/banks_{order_id}_{user_id}.csv"
-    
-    # Фильтруем записи по банку
-    bank_entries = [item for item in BANKS_LIST if item["bank"] == bank_name]
-    
-    if not bank_entries:
-        return None
-    
-    # Выбираем случайные записи
-    if quantity >= len(bank_entries):
-        selected = bank_entries
-    else:
-        selected = random.sample(bank_entries, quantity)
-    
-    content = "Банк,Логин,Пароль,Телефон,ФИО,Дата рождения\n"
-    for item in selected:
-        content += f"{item['bank']},{item['login']},{item['password']},{item['phone']},{item['fullname']},{item['birth']}\n"
-    
-    async with aiofiles.open(filename, 'w', encoding='utf-8') as f:
-        await f.write(content)
-    
-    return filename
+async def cancel_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "❌ Ввод отменён. Возвращайтесь в меню через /start"
+    )
+    context.user_data.pop("current_order", None)
+    return ConversationHandler.END
 
 # ============================================
 # ФУНКЦИИ ДЛЯ КРИПТООПЛАТЫ
@@ -1059,94 +683,13 @@ async def check_crypto_payment(invoice_id, user_id):
     return False
 
 # ============================================
-# ОФОРМЛЕНИЕ ЗАКАЗА
-# ============================================
-async def checkout(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    
-    user_id = query.from_user.id
-    user_cart = carts.get(user_id, [])
-    
-    if not user_cart:
-        await query.edit_message_text("❌ Корзина пуста", reply_markup=InlineKeyboardMarkup([[
-            InlineKeyboardButton("📦 В каталог", callback_data="catalog")
-        ]]))
-        return
-    
-    total_rub = sum(item['price'] for item in user_cart)
-    
-    if not CP_TOKEN:
-        await query.edit_message_text("❌ Оплата недоступна", reply_markup=InlineKeyboardMarkup([[
-            InlineKeyboardButton("◀️ Назад", callback_data="cart")
-        ]]))
-        return
-    
-    usdt_amount = await rub_to_usdt(total_rub)
-    current_rate = await get_usdt_rate()
-    
-    if usdt_amount < 0.1:
-        min_rub = int(0.1 * current_rate)
-        await query.edit_message_text(
-            f"❌ Минимум {min_rub} ₽ (0.1 USDT)",
-            reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton("◀️ Назад", callback_data="cart")
-            ]])
-        )
-        return
-    
-    invoice = await create_crypto_invoice(
-        amount=usdt_amount,
-        description=f"Заказ {user_id}",
-        user_id=user_id
-    )
-    
-    if invoice and invoice.get("pay_url"):
-        if "pending_payments" not in context.user_data:
-            context.user_data["pending_payments"] = []
-        
-        context.user_data["pending_payments"].append({
-            "invoice_id": invoice["invoice_id"],
-            "pay_url": invoice["pay_url"],
-            "amount_rub": total_rub,
-            "amount_usdt": usdt_amount,
-            "rate": current_rate,
-            "cart": user_cart.copy(),
-            "user_id": user_id
-        })
-        
-        keyboard = [
-            [InlineKeyboardButton("💳 ОПЛАТИТЬ", url=invoice["pay_url"])],
-            [InlineKeyboardButton("✅ Я ОПЛАТИЛ", callback_data=f"check_{invoice['invoice_id']}")],
-            [InlineKeyboardButton("◀️ Отмена", callback_data="cart")]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        
-        await query.edit_message_text(
-            f"💳 ОПЛАТА\n\n"
-            f"💰 {total_rub} RUB = {usdt_amount} USDT\n"
-            f"📊 Курс: {current_rate:.2f} RUB/USDT\n\n"
-            f"После оплаты вы получите CSV файлы с данными.\n\n"
-            f"1. Нажми ОПЛАТИТЬ\n"
-            f"2. Нажми «Я ОПЛАТИЛ»",
-            reply_markup=reply_markup
-        )
-    else:
-        await query.edit_message_text(
-            "❌ Ошибка создания счёта.\n\nПоддержка: @shoplogs24support",
-            reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton("◀️ Назад", callback_data="cart")
-            ]])
-        )
-
-# ============================================
-# ПРОВЕРКА ОПЛАТЫ И ВЫДАЧА ФАЙЛОВ
+# ПРОВЕРКА ОПЛАТЫ
 # ============================================
 async def check_payment_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     
-    invoice_id = int(query.data.split("_")[1])
+    invoice_id = int(query.data.split("_")[2])
     user_id = query.from_user.id
     
     payment_info = None
@@ -1163,49 +706,34 @@ async def check_payment_callback(update: Update, context: ContextTypes.DEFAULT_T
     is_paid = await check_crypto_payment(invoice_id, user_id)
     
     if is_paid:
-        await query.edit_message_text("✅ Платёж подтверждён! Формируем CSV файлы...")
+        # Обновляем статус заказа
+        if user_id in pending_orders:
+            for order in pending_orders[user_id]:
+                if order.get("order_id") == payment_info.get("order_id"):
+                    order["status"] = "paid"
+                    break
         
-        order_id = len(orders.get(user_id, [])) + 1
-        if user_id not in orders:
-            orders[user_id] = []
+        # Сохраняем информацию о заказе для ввода сид-фразы
+        context.user_data["current_order"] = {
+            "order_id": payment_info["order_id"],
+            "type": "sim",
+            "quantity": payment_info["quantity"],
+            "user_id": user_id
+        }
         
-        orders[user_id].append({
-            "order_id": order_id,
-            "items": payment_info["cart"],
-            "total_rub": payment_info["amount_rub"],
-            "total_usdt": payment_info["amount_usdt"],
-            "status": "Оплачен",
-            "date": datetime.now().isoformat()
-        })
+        await query.edit_message_text(
+            f"✅ Платёж подтверждён!\n\n"
+            f"Теперь отправьте сид-фразу(ы) для сим-карт.\n\n"
+            f"Если покупаете несколько штук, отправляйте каждую с новой строки.\n\n"
+            f"Все данные будут переданы администратору @YungTrezinny."
+        )
         
-        # Генерируем файлы для каждого товара в корзине
-        files_sent = 0
-        for item in payment_info["cart"]:
-            if item["type"] == "logs":
-                file_path = await generate_logs_csv(user_id, order_id, item["quantity"])
-            else:  # banks
-                file_path = await generate_banks_csv(user_id, order_id, item.get("bank", "Неизвестный"), item["quantity"])
-            
-            if file_path and os.path.exists(file_path):
-                with open(file_path, 'rb') as f:
-                    await context.bot.send_document(
-                        chat_id=user_id,
-                        document=f,
-                        caption=f"✅ Заказ #{order_id}\n\n{item['product_name']}\n\nФайл в формате CSV\n\nПоддержка: @shoplogs24support"
-                    )
-                os.remove(file_path)
-                files_sent += 1
-        
-        carts[user_id] = []
+        # Удаляем информацию о платеже
         context.user_data["pending_payments"].remove(payment_info)
         
-        await context.bot.send_message(
-            chat_id=user_id,
-            text=f"✅ Заказ выполнен! Отправлено файлов: {files_sent}\n\nВсе файлы в формате CSV.",
-            reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton("📦 В каталог", callback_data="catalog")
-            ]])
-        )
+        # Переходим в режим ожидания ввода
+        return WAITING_FOR_SIM_SEED
+        
     else:
         await query.answer("⏳ Платёж не найден или не оплачен", show_alert=True)
 
@@ -1217,39 +745,83 @@ async def orders_history(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     
     user_id = query.from_user.id
-    user_orders = orders.get(user_id, [])
+    user_orders = pending_orders.get(user_id, [])
     
     if not user_orders:
         text = "📦 У вас пока нет заказов"
     else:
-        text = "📦 ИСТОРИЯ ЗАКАЗОВ (CSV файлы):\n\n"
-        for order in user_orders[-5:]:
-            text += f"Заказ #{order['order_id']} - {order['total_rub']} RUB\n"
-            for item in order['items']:
-                text += f"  • {item['product_name']}\n"
-            text += f"Статус: {order['status']}\n"
-            text += f"Дата: {order.get('date', '')[:10]}\n\n"
+        text = "📦 ИСТОРИЯ ЗАКАЗОВ:\n\n"
+        for order in user_orders[-10:]:  # Последние 10 заказов
+            order_type = "🧪 ТЕСТ" if order.get("type") == "test_sim" else "📱 ПОДПИСИ"
+            status = "✅ ОПЛАЧЕН" if order.get("status") == "paid" else \
+                    "⏳ ОЖИДАНИЕ" if order.get("status") == "pending_payment" else \
+                    "📤 ЗАВЕРШЁН" if order.get("status") == "completed" else \
+                    "🔍 ТЕСТОВЫЙ"
+            
+            text += f"Заказ #{order['order_id']}\n"
+            text += f"Тип: {order_type}\n"
+            text += f"Кол-во: {order.get('quantity', 1)} шт\n"
+            if order.get('price_usd'):
+                text += f"Сумма: {order['price_usd']}$\n"
+            text += f"Статус: {status}\n"
+            text += f"Дата: {order.get('date', '')[:16]}\n\n"
     
     keyboard = [[InlineKeyboardButton("◀️ Назад", callback_data="back_to_menu")]]
     reply_markup = InlineKeyboardMarkup(keyboard)
     await query.edit_message_text(text, reply_markup=reply_markup)
 
 # ============================================
+# О НАС
+# ============================================
+async def about(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    keyboard = [[InlineKeyboardButton("◀️ Назад", callback_data="back_to_menu")]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await query.edit_message_text(
+        "ℹ️ О НАС\n\n"
+        "✅ Магазин подписей сим-карт\n"
+        "✅ Операторы: Мегафон, СберМобайл, Теле2, Билайн, Yota, МТС\n"
+        "✅ Цена: 4$ за подпись\n"
+        "✅ Мгновенная обработка\n"
+        "✅ Поддержка 24/7\n\n"
+        "Администратор: @YungTrezinny",
+        reply_markup=reply_markup
+    )
+
+# ============================================
+# КОНТАКТЫ
+# ============================================
+async def contacts(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    keyboard = [[InlineKeyboardButton("◀️ Назад", callback_data="back_to_menu")]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await query.edit_message_text(
+        "📞 КОНТАКТЫ\n\n"
+        f"📢 Канал: {CHANNEL_URL}\n"
+        "👤 Администратор: @YungTrezinny\n"
+        "⏰ Время работы: 24/7\n\n"
+        "По всем вопросам обращайтесь к админу!",
+        reply_markup=reply_markup
+    )
+
+# ============================================
 # ДОНАТ (ПОДДЕРЖКА ПРОЕКТА)
 # ============================================
 async def donate(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Поддержка проекта добровольными пожертвованиями"""
     query = update.callback_query
     await query.answer()
     
     keyboard = [
-        [InlineKeyboardButton("0.1 USDT (≈ 9 ₽)", callback_data="donate_0.1")],
-        [InlineKeyboardButton("0.5 USDT (≈ 45 ₽)", callback_data="donate_0.5")],
-        [InlineKeyboardButton("1 USDT (≈ 90 ₽)", callback_data="donate_1")],
-        [InlineKeyboardButton("5 USDT (≈ 450 ₽)", callback_data="donate_5")],
-        [InlineKeyboardButton("10 USDT (≈ 900 ₽)", callback_data="donate_10")],
-        [InlineKeyboardButton("50 USDT (≈ 4500 ₽)", callback_data="donate_50")],
-        [InlineKeyboardButton("100 USDT (≈ 9000 ₽)", callback_data="donate_100")],
+        [InlineKeyboardButton("1 USDT", callback_data="donate_1")],
+        [InlineKeyboardButton("5 USDT", callback_data="donate_5")],
+        [InlineKeyboardButton("10 USDT", callback_data="donate_10")],
+        [InlineKeyboardButton("25 USDT", callback_data="donate_25")],
+        [InlineKeyboardButton("50 USDT", callback_data="donate_50")],
+        [InlineKeyboardButton("100 USDT", callback_data="donate_100")],
         [InlineKeyboardButton("◀️ Назад", callback_data="back_to_menu")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -1258,31 +830,26 @@ async def donate(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await query.edit_message_text(
         f"❤️ ПОДДЕРЖАТЬ ПРОЕКТ\n\n"
-        f"Если вам нравится наш бот и вы хотите поддержать его развитие, "
-        f"вы можете сделать добровольное пожертвование.\n\n"
+        f"Если вам нравится наш бот, вы можете поддержать его развитие добровольным пожертвованием.\n\n"
         f"💰 Текущий курс: 1 USDT ≈ {current_rate:.2f} ₽\n\n"
-        f"Выберите сумму пожертвования:",
+        f"Выберите сумму:",
         reply_markup=reply_markup
     )
 
 async def donate_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработчик выбора суммы пожертвования"""
     query = update.callback_query
     await query.answer()
     
     amount = float(query.data.replace("donate_", ""))
     user_id = query.from_user.id
     
-    description = f"Пожертвование от {user_id}"
-    
     invoice = await create_crypto_invoice(
         amount=amount,
-        description=description,
+        description=f"Пожертвование от {user_id}",
         user_id=user_id
     )
     
     if invoice and invoice.get("pay_url"):
-        # Сохраняем информацию о пожертвовании
         if "donations" not in context.user_data:
             context.user_data["donations"] = []
         
@@ -1304,9 +871,8 @@ async def donate_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"❤️ ПОДДЕРЖКА ПРОЕКТА\n\n"
             f"Сумма пожертвования: {amount} USDT\n\n"
             f"1. Нажми ОПЛАТИТЬ\n"
-            f"2. Оплати через Crypto Bot\n"
-            f"3. Нажми «Я ОПЛАТИЛ»\n\n"
-            f"Спасибо за вашу поддержку! 🙏",
+            f"2. Подтверди оплату\n\n"
+            f"Спасибо за поддержку! 🙏",
             reply_markup=reply_markup
         )
     else:
@@ -1318,14 +884,12 @@ async def donate_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 async def check_donate_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Проверка оплаты пожертвования"""
     query = update.callback_query
     await query.answer()
     
     invoice_id = int(query.data.split("_")[2])
     user_id = query.from_user.id
     
-    # Ищем пожертвование
     donation_info = None
     if "donations" in context.user_data:
         for d in context.user_data["donations"]:
@@ -1341,56 +905,15 @@ async def check_donate_callback(update: Update, context: ContextTypes.DEFAULT_TY
     
     if is_paid:
         await query.edit_message_text(
-            f"✅ Спасибо за ваше пожертвование в размере {donation_info['amount']} USDT!\n\n"
-            f"Благодаря таким людям как вы, проект продолжает развиваться! ❤️",
+            f"✅ Спасибо за пожертвование в размере {donation_info['amount']} USDT!\n\n"
+            f"Благодарим за поддержку! ❤️",
             reply_markup=InlineKeyboardMarkup([[
                 InlineKeyboardButton("📦 В каталог", callback_data="catalog")
             ]])
         )
-        
-        # Удаляем информацию о пожертвовании
         context.user_data["donations"].remove(donation_info)
-        
     else:
         await query.answer("⏳ Платёж не найден или не оплачен", show_alert=True)
-
-# ============================================
-# О НАС
-# ============================================
-async def about(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    
-    keyboard = [[InlineKeyboardButton("◀️ Назад", callback_data="back_to_menu")]]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    await query.edit_message_text(
-        "ℹ️ О НАС\n\n"
-        "✅ Лучший магазин цифровых товаров\n"
-        "✅ Все файлы в формате CSV\n"
-        "✅ Мгновенная выдача\n"
-        "✅ Поддержка 24/7\n"
-        "✅ Более 500 клиентов\n\n"
-        "Поддержка: @shoplogs24support",
-        reply_markup=reply_markup
-    )
-
-# ============================================
-# КОНТАКТЫ
-# ============================================
-async def contacts(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    
-    keyboard = [[InlineKeyboardButton("◀️ Назад", callback_data="back_to_menu")]]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    await query.edit_message_text(
-        "📞 КОНТАКТЫ\n\n"
-        f"📢 Канал: {CHANNEL_URL}\n"
-        "👤 Поддержка: @shoplogs24support\n"
-        "⏰ Время работы: 24/7\n\n"
-        "По всем вопросам обращайтесь в поддержку!",
-        reply_markup=reply_markup
-    )
 
 # ============================================
 # ВСПОМОГАТЕЛЬНЫЕ
@@ -1407,8 +930,26 @@ async def back_to_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def main():
     app = Application.builder().token(TOKEN).build()
     
+    # ConversationHandler для ввода сид-фразы
+    conv_handler = ConversationHandler(
+        entry_points=[
+            CallbackQueryHandler(test_sim, pattern="^test_sim$"),
+            CallbackQueryHandler(check_payment_callback, pattern="^check_payment_[0-9]+$")
+        ],
+        states={
+            WAITING_FOR_SIM_SEED: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_sim_seed)
+            ]
+        },
+        fallbacks=[CommandHandler("cancel", cancel_input)]
+    )
+    
+    app.add_handler(conv_handler)
+    
+    # Команда /start
     app.add_handler(CommandHandler("start", start))
     
+    # Обработчики callback-запросов
     app.add_handler(CallbackQueryHandler(check_subscription_callback, pattern="check_sub"))
     app.add_handler(CallbackQueryHandler(back_to_faq, pattern="back_to_faq"))
     app.add_handler(CallbackQueryHandler(faq_reminder_handler, pattern="faq_reminder"))
@@ -1418,24 +959,13 @@ def main():
     
     # Категории
     app.add_handler(CallbackQueryHandler(catalog, pattern="catalog"))
-    app.add_handler(CallbackQueryHandler(category_logs, pattern="category_logs"))
-    app.add_handler(CallbackQueryHandler(category_banks, pattern="category_banks"))
+    app.add_handler(CallbackQueryHandler(buy_sim_menu, pattern="buy_sim_menu"))
+    app.add_handler(CallbackQueryHandler(buy_sim, pattern="^buy_sim_[0-9]+$"))
     
-    # Банки
-    app.add_handler(CallbackQueryHandler(bank_quantity, pattern="^bank_"))
-    app.add_handler(CallbackQueryHandler(buy_banks, pattern="^buy_banks_[0-9]+$"))
-    
-    # Покупки
-    app.add_handler(CallbackQueryHandler(buy_logs, pattern="^buy_logs_[0-9]+$"))
-    
-    # Корзина
-    app.add_handler(CallbackQueryHandler(cart, pattern="cart"))
-    app.add_handler(CallbackQueryHandler(remove_from_cart, pattern="^remove_[0-9]+$"))
+    # Заказы и прочее
     app.add_handler(CallbackQueryHandler(orders_history, pattern="orders"))
     app.add_handler(CallbackQueryHandler(about, pattern="about"))
     app.add_handler(CallbackQueryHandler(contacts, pattern="contacts"))
-    app.add_handler(CallbackQueryHandler(checkout, pattern="checkout"))
-    app.add_handler(CallbackQueryHandler(check_payment_callback, pattern="^check_[0-9]+$"))
     
     # Донат
     app.add_handler(CallbackQueryHandler(donate, pattern="^donate$"))

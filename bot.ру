@@ -429,7 +429,7 @@ async def check_crypto_payment(invoice_id, user_id):
     return False
 
 # ============================================
-# ФУНКЦИЯ ОТМЕНЫ (ИСПРАВЛЕНИЕ ОШИБКИ)
+# ФУНКЦИЯ ОТМЕНЫ
 # ============================================
 async def cancel_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработчик отмены ввода"""
@@ -451,7 +451,6 @@ async def cancel_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ]])
         )
     
-    # Очищаем временные данные
     context.user_data.pop("current_order", None)
     context.user_data.pop("awaiting_captcha", None)
     
@@ -466,7 +465,6 @@ async def clicker_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     user_id = query.from_user.id
     
-    # Инициализируем данные пользователя если нужно
     if user_id not in clicker_data:
         clicker_data[user_id] = {
             'clicks': 0,
@@ -515,15 +513,12 @@ async def clicker_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     user_data = clicker_data[user_id]
     
-    # Добавляем клик
     user_data['clicks'] += 1
     clicks = user_data['clicks']
     
-    # Проверяем нужно ли показать капчу
     if clicks % CHECKPOINT_INTERVAL == 0 and clicks > 0:
         user_data['verification_pending'] = True
         
-        # Генерируем капчу
         num1 = random.randint(1, 10)
         num2 = random.randint(1, 10)
         captcha_answer = str(num1 + num2)
@@ -556,7 +551,6 @@ async def handle_captcha_answer(update: Update, context: ContextTypes.DEFAULT_TY
     captcha = context.user_data.get('captcha', {})
     
     if answer == captcha.get('answer', ''):
-        # Правильный ответ
         if user_id in clicker_data:
             clicker_data[user_id]['verification_pending'] = False
         
@@ -564,7 +558,6 @@ async def handle_captcha_answer(update: Update, context: ContextTypes.DEFAULT_TY
         
         await update.message.reply_text("✅ Проверка пройдена! Продолжайте кликать.")
         
-        # Возвращаем в меню кликера
         fake_query = type('obj', (object,), {
             'from_user': type('obj', (object,), {'id': user_id}),
             'message': update.message,
@@ -572,7 +565,6 @@ async def handle_captcha_answer(update: Update, context: ContextTypes.DEFAULT_TY
         })
         await clicker_menu(Update(update.update_id, callback_query=fake_query), context)
     else:
-        # Неправильный ответ
         await update.message.reply_text(
             f"❌ Неправильный ответ. Попробуйте снова.\n\n"
             f"Вопрос: {captcha.get('question', '')}\n"
@@ -995,6 +987,572 @@ async def set_nickname(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ConversationHandler.END
 
 # ============================================
+# НОВАЯ ФУНКЦИЯ ДЛЯ ОПЛАТЫ С БАЛАНСА
+# ============================================
+async def pay_with_balance(update: Update, context: ContextTypes.DEFAULT_TYPE, product_type, quantity, price_usd, item_id=None):
+    """Оплата товара с внутреннего баланса"""
+    query = update.callback_query
+    user_id = query.from_user.id
+    
+    # Проверяем достаточно ли средств
+    if user_balances.get(user_id, 0) < price_usd:
+        await query.answer("❌ Недостаточно средств на балансе!", show_alert=True)
+        return False
+    
+    # Списываем средства
+    user_balances[user_id] -= price_usd
+    
+    # Создаём заказ
+    if user_id not in pending_orders:
+        pending_orders[user_id] = []
+    
+    order_id = len(pending_orders[user_id]) + 1
+    
+    order = {
+        "order_id": order_id,
+        "type": product_type,
+        "quantity": quantity,
+        "price_usd": price_usd,
+        "status": "paid",
+        "payment_method": "balance",
+        "date": datetime.now().isoformat()
+    }
+    
+    if product_type == "market":
+        order["item_id"] = item_id
+        order["seller_id"] = market_items[item_id]['seller_id']
+    
+    pending_orders[user_id].append(order)
+    
+    # Записываем транзакцию
+    transactions.append({
+        'user_id': user_id,
+        'type': 'purchase',
+        'product': product_type,
+        'amount': price_usd,
+        'payment': 'balance',
+        'date': datetime.now().isoformat()
+    })
+    
+    # Обновляем статистику
+    if user_id not in user_stats:
+        user_stats[user_id] = {'spent': 0, 'opened_cases': 0, 'won': 0, 'nickname': '', 'join_date': datetime.now().isoformat()}
+    user_stats[user_id]['spent'] += price_usd
+    
+    # Для товаров с маркетплейса переводим деньги продавцу
+    if product_type == "market" and item_id and item_id in market_items:
+        seller_id = market_items[item_id]['seller_id']
+        seller_earnings = price_usd * (1 - PLATFORM_COMMISSION)
+        
+        if seller_id not in user_balances:
+            user_balances[seller_id] = 0
+        user_balances[seller_id] += seller_earnings
+        
+        # Удаляем товар после продажи
+        del market_items[item_id]
+        
+        await query.edit_message_text(
+            f"✅ Покупка совершена!\n\n"
+            f"Товар #{item_id} оплачен с баланса.\n"
+            f"Средства переведены продавцу.\n\n"
+            f"Скоро вы получите данные от продавца.",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("📋 К списку", callback_data="market_list")
+            ]])
+        )
+    else:
+        # Для обычных товаров запрашиваем сид-фразу
+        context.user_data["current_order"] = {
+            "order_id": order_id,
+            "type": product_type,
+            "quantity": quantity,
+            "user_id": user_id
+        }
+        
+        keyboard = [[InlineKeyboardButton("❌ Отмена", callback_data="cancel_input")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        product_text = "ТЕСТОВЫЙ ТОВАР" if product_type == "test" else f"{quantity} ПОДПИСИ(ЕЙ)"
+        
+        await query.edit_message_text(
+            f"✅ Оплачено с баланса!\n\n"
+            f"Теперь отправьте сид-фразу(ы) для {product_text}.\n\n"
+            f"📌 ПРИМЕР сид-фразы (Мегафон):\n"
+            f"`123456789012345678`\n\n"
+            f"Если покупаете несколько штук, отправляйте каждую с новой строки.",
+            reply_markup=reply_markup,
+            parse_mode='Markdown'
+        )
+        
+        return WAITING_FOR_SIM_SEED
+    
+    return True
+
+# ============================================
+# ОБНОВЛЁННАЯ ФУНКЦИЯ ДЛЯ ПОКУПКИ СИМ-КАРТ
+# ============================================
+async def buy_sim(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    quantity = int(query.data.split("_")[2])
+    price_usd = quantity * PRICE_PER_SIM_USD
+    
+    # Показываем выбор способа оплаты
+    keyboard = [
+        [InlineKeyboardButton("💳 Crypto Bot (USDT)", callback_data=f"pay_sim_crypto_{quantity}")],
+        [InlineKeyboardButton("💰 Оплатить с баланса", callback_data=f"pay_sim_balance_{quantity}")],
+        [InlineKeyboardButton("◀️ Назад", callback_data="buy_sim_menu")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    balance = user_balances.get(query.from_user.id, 0)
+    balance_status = f"✅ Достаточно" if balance >= price_usd else f"❌ Не хватает (нужно {price_usd}$)"
+    
+    await query.edit_message_text(
+        f"📱 Покупка {quantity} подписи(ей)\n"
+        f"💰 Сумма: {price_usd}$\n"
+        f"👤 Твой баланс: {balance}$ ({balance_status})\n\n"
+        f"Выбери способ оплаты:",
+        reply_markup=reply_markup
+    )
+
+async def pay_sim_crypto(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Оплата подписей через Crypto Bot"""
+    query = update.callback_query
+    await query.answer()
+    
+    quantity = int(query.data.split("_")[3])
+    price_usd = quantity * PRICE_PER_SIM_USD
+    user_id = query.from_user.id
+    
+    if user_id not in pending_orders:
+        pending_orders[user_id] = []
+    
+    order_id = len(pending_orders[user_id]) + 1
+    
+    pending_orders[user_id].append({
+        "order_id": order_id,
+        "type": "sim",
+        "quantity": quantity,
+        "price_usd": price_usd,
+        "status": "pending_payment",
+        "payment_method": "crypto",
+        "date": datetime.now().isoformat()
+    })
+    
+    usdt_amount = await usd_to_usdt(price_usd)
+    current_rate = await get_usdt_rate()
+    
+    invoice = await create_crypto_invoice(
+        amount=usdt_amount,
+        description=f"Подписи {quantity}шт - заказ #{order_id} для user_{user_id}",
+        user_id=user_id
+    )
+    
+    if invoice and invoice.get("pay_url"):
+        if "pending_payments" not in context.user_data:
+            context.user_data["pending_payments"] = []
+        
+        context.user_data["pending_payments"].append({
+            "invoice_id": invoice["invoice_id"],
+            "pay_url": invoice["pay_url"],
+            "amount_usd": price_usd,
+            "amount_usdt": usdt_amount,
+            "quantity": quantity,
+            "order_id": order_id,
+            "user_id": user_id,
+            "type": "sim",
+            "status": "pending"
+        })
+        
+        keyboard = [
+            [InlineKeyboardButton("💳 ОПЛАТИТЬ", url=invoice["pay_url"])],
+            [InlineKeyboardButton("✅ Я ОПЛАТИЛ", callback_data=f"check_payment_{invoice['invoice_id']}")],
+            [InlineKeyboardButton("◀️ Отмена", callback_data="catalog")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await query.edit_message_text(
+            f"💳 ОПЛАТА КРИПТОВАЛЮТОЙ\n\n"
+            f"💰 {quantity} подписей = {price_usd}$ = {usdt_amount} USDT\n"
+            f"📊 Курс: 1 USDT ≈ {current_rate:.2f} ₽\n\n"
+            f"1. Нажми ОПЛАТИТЬ\n"
+            f"2. Оплати через Crypto Bot\n"
+            f"3. Нажми «Я ОПЛАТИЛ»",
+            reply_markup=reply_markup
+        )
+    else:
+        await query.edit_message_text(
+            "❌ Ошибка создания счёта.\n\nПоддержка: @YungTrezinny",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("◀️ Назад", callback_data="catalog")
+            ]])
+        )
+
+async def pay_sim_balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Оплата подписей с баланса"""
+    query = update.callback_query
+    await query.answer()
+    
+    quantity = int(query.data.split("_")[3])
+    price_usd = quantity * PRICE_PER_SIM_USD
+    
+    await pay_with_balance(update, context, "sim", quantity, price_usd)
+
+# ============================================
+# ОБНОВЛЁННАЯ ФУНКЦИЯ ДЛЯ ТЕСТОВОГО ТОВАРА
+# ============================================
+async def buy_test(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    price_usd = 0.1
+    
+    keyboard = [
+        [InlineKeyboardButton("💳 Crypto Bot (USDT)", callback_data="pay_test_crypto")],
+        [InlineKeyboardButton("💰 Оплатить с баланса", callback_data="pay_test_balance")],
+        [InlineKeyboardButton("◀️ Назад", callback_data="catalog")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    balance = user_balances.get(query.from_user.id, 0)
+    balance_status = f"✅ Достаточно" if balance >= price_usd else f"❌ Не хватает (нужно {price_usd}$)"
+    
+    await query.edit_message_text(
+        f"🧪 Тестовый товар\n"
+        f"💰 Сумма: {price_usd}$\n"
+        f"👤 Твой баланс: {balance}$ ({balance_status})\n\n"
+        f"Выбери способ оплаты:",
+        reply_markup=reply_markup
+    )
+
+async def pay_test_crypto(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Оплата тестового товара через Crypto Bot"""
+    query = update.callback_query
+    await query.answer()
+    
+    price_usd = 0.1
+    user_id = query.from_user.id
+    
+    if user_id not in pending_orders:
+        pending_orders[user_id] = []
+    
+    order_id = len(pending_orders[user_id]) + 1
+    
+    pending_orders[user_id].append({
+        "order_id": order_id,
+        "type": "test",
+        "quantity": 1,
+        "price_usd": price_usd,
+        "status": "pending_payment",
+        "payment_method": "crypto",
+        "date": datetime.now().isoformat()
+    })
+    
+    usdt_amount = await usd_to_usdt(price_usd)
+    current_rate = await get_usdt_rate()
+    
+    invoice = await create_crypto_invoice(
+        amount=usdt_amount,
+        description=f"Тестовый товар - заказ #{order_id} для user_{user_id}",
+        user_id=user_id
+    )
+    
+    if invoice and invoice.get("pay_url"):
+        if "pending_payments" not in context.user_data:
+            context.user_data["pending_payments"] = []
+        
+        context.user_data["pending_payments"].append({
+            "invoice_id": invoice["invoice_id"],
+            "pay_url": invoice["pay_url"],
+            "amount_usd": price_usd,
+            "amount_usdt": usdt_amount,
+            "quantity": 1,
+            "order_id": order_id,
+            "user_id": user_id,
+            "type": "test",
+            "status": "pending"
+        })
+        
+        keyboard = [
+            [InlineKeyboardButton("💳 ОПЛАТИТЬ", url=invoice["pay_url"])],
+            [InlineKeyboardButton("✅ Я ОПЛАТИЛ", callback_data=f"check_payment_{invoice['invoice_id']}")],
+            [InlineKeyboardButton("◀️ Отмена", callback_data="catalog")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await query.edit_message_text(
+            f"💳 ОПЛАТА КРИПТОВАЛЮТОЙ\n\n"
+            f"🧪 Тестовый товар = {price_usd}$ = {usdt_amount} USDT\n"
+            f"📊 Курс: 1 USDT ≈ {current_rate:.2f} ₽\n\n"
+            f"1. Нажми ОПЛАТИТЬ\n"
+            f"2. Оплати через Crypto Bot\n"
+            f"3. Нажми «Я ОПЛАТИЛ»",
+            reply_markup=reply_markup
+        )
+    else:
+        await query.edit_message_text(
+            "❌ Ошибка создания счёта.\n\nПоддержка: @YungTrezinny",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("◀️ Назад", callback_data="catalog")
+            ]])
+        )
+
+async def pay_test_balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Оплата тестового товара с баланса"""
+    query = update.callback_query
+    await query.answer()
+    
+    price_usd = 0.1
+    
+    await pay_with_balance(update, context, "test", 1, price_usd)
+
+# ============================================
+# ОБНОВЛЁННАЯ ФУНКЦИЯ ДЛЯ ПОКУПКИ С МАРКЕТПЛЕЙСА
+# ============================================
+async def market_buy(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    item_id = int(query.data.split("_")[2])
+    
+    if item_id not in market_items:
+        await query.edit_message_text(
+            "❌ Товар не найден или уже продан.",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("◀️ Назад", callback_data="market_list")
+            ]])
+        )
+        return
+    
+    item = market_items[item_id]
+    price_usd = item['price']
+    
+    # Показываем выбор способа оплаты
+    keyboard = [
+        [InlineKeyboardButton("💳 Crypto Bot (USDT)", callback_data=f"buy_market_crypto_{item_id}")],
+        [InlineKeyboardButton("💰 Оплатить с баланса", callback_data=f"buy_market_balance_{item_id}")],
+        [InlineKeyboardButton("◀️ Назад", callback_data=f"market_view_{item_id}")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    user_id = query.from_user.id
+    balance = user_balances.get(user_id, 0)
+    balance_status = f"✅ Достаточно" if balance >= price_usd else f"❌ Не хватает (нужно {price_usd}$)"
+    
+    await query.edit_message_text(
+        f"🛒 Покупка товара #{item_id}\n"
+        f"📌 {item['title']}\n"
+        f"💰 Цена: {price_usd}$\n"
+        f"👤 Твой баланс: {balance}$ ({balance_status})\n\n"
+        f"Выбери способ оплаты:",
+        reply_markup=reply_markup
+    )
+
+async def buy_market_crypto(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Покупка товара с маркетплейса через Crypto Bot"""
+    query = update.callback_query
+    await query.answer()
+    
+    item_id = int(query.data.split("_")[3])
+    
+    if item_id not in market_items:
+        await query.edit_message_text(
+            "❌ Товар не найден или уже продан.",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("◀️ Назад", callback_data="market_list")
+            ]])
+        )
+        return
+    
+    item = market_items[item_id]
+    price_usd = item['price']
+    user_id = query.from_user.id
+    
+    if user_id not in pending_orders:
+        pending_orders[user_id] = []
+    
+    order_id = len(pending_orders[user_id]) + 1
+    
+    pending_orders[user_id].append({
+        "order_id": order_id,
+        "type": "market",
+        "item_id": item_id,
+        "price_usd": price_usd,
+        "status": "pending_payment",
+        "payment_method": "crypto",
+        "date": datetime.now().isoformat()
+    })
+    
+    usdt_amount = await usd_to_usdt(price_usd)
+    current_rate = await get_usdt_rate()
+    
+    invoice = await create_crypto_invoice(
+        amount=usdt_amount,
+        description=f"Товар #{item_id} - заказ #{order_id} для user_{user_id}",
+        user_id=user_id
+    )
+    
+    if invoice and invoice.get("pay_url"):
+        if "pending_payments" not in context.user_data:
+            context.user_data["pending_payments"] = []
+        
+        context.user_data["pending_payments"].append({
+            "invoice_id": invoice["invoice_id"],
+            "pay_url": invoice["pay_url"],
+            "amount_usd": price_usd,
+            "amount_usdt": usdt_amount,
+            "item_id": item_id,
+            "order_id": order_id,
+            "user_id": user_id,
+            "type": "market",
+            "status": "pending"
+        })
+        
+        keyboard = [
+            [InlineKeyboardButton("💳 ОПЛАТИТЬ", url=invoice["pay_url"])],
+            [InlineKeyboardButton("✅ Я ОПЛАТИЛ", callback_data=f"check_payment_{invoice['invoice_id']}")],
+            [InlineKeyboardButton("◀️ Отмена", callback_data=f"market_view_{item_id}")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await query.edit_message_text(
+            f"💳 ОПЛАТА КРИПТОВАЛЮТОЙ\n\n"
+            f"🛒 Товар #{item_id}: {item['title']}\n"
+            f"💰 Цена: {price_usd}$ = {usdt_amount} USDT\n"
+            f"📊 Курс: 1 USDT ≈ {current_rate:.2f} ₽\n\n"
+            f"1. Нажми ОПЛАТИТЬ\n"
+            f"2. Оплати через Crypto Bot\n"
+            f"3. Нажми «Я ОПЛАТИЛ»",
+            reply_markup=reply_markup
+        )
+    else:
+        await query.edit_message_text(
+            "❌ Ошибка создания счёта.\n\nПоддержка: @YungTrezinny",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("◀️ Назад", callback_data=f"market_view_{item_id}")
+            ]])
+        )
+
+async def buy_market_balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Покупка товара с маркетплейса с баланса"""
+    query = update.callback_query
+    await query.answer()
+    
+    item_id = int(query.data.split("_")[3])
+    
+    if item_id not in market_items:
+        await query.edit_message_text(
+            "❌ Товар не найден или уже продан.",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("◀️ Назад", callback_data="market_list")
+            ]])
+        )
+        return
+    
+    item = market_items[item_id]
+    price_usd = item['price']
+    
+    await pay_with_balance(update, context, "market", 1, price_usd, item_id)
+
+# ============================================
+# ОБНОВЛЁННАЯ ФУНКЦИЯ ПРОВЕРКИ ПЛАТЕЖА
+# ============================================
+async def check_payment_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    invoice_id = int(query.data.split("_")[2])
+    user_id = query.from_user.id
+    
+    payment_info = None
+    if "pending_payments" in context.user_data:
+        for p in context.user_data["pending_payments"]:
+            if p["invoice_id"] == invoice_id and p["user_id"] == user_id:
+                payment_info = p
+                break
+    
+    if not payment_info:
+        await query.answer("❌ Платёж не найден", show_alert=True)
+        return
+    
+    is_paid = await check_crypto_payment(invoice_id, user_id)
+    
+    if is_paid:
+        # Обновляем статус заказа
+        if user_id in pending_orders:
+            for order in pending_orders[user_id]:
+                if order.get("order_id") == payment_info.get("order_id"):
+                    order["status"] = "paid"
+                    break
+        
+        # Если это товар с маркетплейса
+        if payment_info["type"] == "market":
+            item_id = payment_info["item_id"]
+            if item_id in market_items:
+                seller_id = market_items[item_id]['seller_id']
+                seller_earnings = payment_info['amount_usd'] * (1 - PLATFORM_COMMISSION)
+                
+                if seller_id not in user_balances:
+                    user_balances[seller_id] = 0
+                user_balances[seller_id] += seller_earnings
+                
+                del market_items[item_id]
+                
+                await query.edit_message_text(
+                    f"✅ Платёж подтверждён!\n\n"
+                    f"Товар #{item_id} оплачен.\n"
+                    f"Средства переведены продавцу.\n\n"
+                    f"Скоро вы получите данные от продавца.",
+                    reply_markup=InlineKeyboardMarkup([[
+                        InlineKeyboardButton("📋 К списку", callback_data="market_list")
+                    ]])
+                )
+                
+                context.user_data["pending_payments"].remove(payment_info)
+                return
+            else:
+                await query.edit_message_text(
+                    "❌ Товар уже не найден.\n\nОбратитесь в поддержку @YungTrezinny",
+                    reply_markup=InlineKeyboardMarkup([[
+                        InlineKeyboardButton("◀️ В меню", callback_data="back_to_menu")
+                    ]])
+                )
+                context.user_data["pending_payments"].remove(payment_info)
+                return
+        
+        # Для обычных товаров
+        context.user_data["current_order"] = {
+            "order_id": payment_info["order_id"],
+            "type": payment_info["type"],
+            "quantity": payment_info["quantity"],
+            "user_id": user_id
+        }
+        
+        keyboard = [[InlineKeyboardButton("❌ Отмена", callback_data="cancel_input")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        product_text = "ТЕСТОВЫЙ ТОВАР" if payment_info["type"] == "test" else f"{payment_info['quantity']} ПОДПИСИ(ЕЙ)"
+        
+        await query.edit_message_text(
+            f"✅ Платёж подтверждён!\n\n"
+            f"Теперь отправьте сид-фразу(ы) для {product_text}.\n\n"
+            f"📌 ПРИМЕР сид-фразы (Мегафон):\n"
+            f"`123456789012345678`\n\n"
+            f"Если покупаете несколько штук, отправляйте каждую с новой строки.\n\n"
+            f"Все данные будут переданы администратору @YungTrezinny.",
+            reply_markup=reply_markup,
+            parse_mode='Markdown'
+        )
+        
+        context.user_data["pending_payments"].remove(payment_info)
+        return WAITING_FOR_SIM_SEED
+        
+    else:
+        await query.answer("⏳ Платёж не найден или не оплачен", show_alert=True)
+
+# ============================================
 # АДМИН-ПАНЕЛЬ
 # ============================================
 async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1353,7 +1911,8 @@ async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"👋 Добро пожаловать!\n\n"
         f"💰 Твой баланс: {balance}$\n\n"
         f"🔥 НОВИНКА: Кейсы с реальными выигрышами!\n"
-        f"🖱 Кликер - нажми 54999 раз и получи подпись бесплатно!"
+        f"🖱 Кликер - нажми 54999 раз и получи подпись бесплатно!\n"
+        f"💳 Теперь можно платить с баланса!"
     )
     
     if update.callback_query:
@@ -1362,7 +1921,7 @@ async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(text, reply_markup=reply_markup)
 
 # ============================================
-# ВСПОМОГАТЕЛЬНЫЕ
+# ОСТАЛЬНЫЕ ФУНКЦИИ
 # ============================================
 async def back_to_faq(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await show_faq(update, context)
@@ -1376,7 +1935,7 @@ async def catalog(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     keyboard = [
         [InlineKeyboardButton("📱 Подписи сим-карт (4$)", callback_data="buy_sim_menu")],
-        [InlineKeyboardButton("🧪 Тестовый товар (0.1$)", callback_data="buy_test_0.1")],
+        [InlineKeyboardButton("🧪 Тестовый товар (0.1$)", callback_data="buy_test")],
         [InlineKeyboardButton("◀️ Назад", callback_data="back_to_menu")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -1386,6 +1945,27 @@ async def catalog(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Товары от администрации:\n\n"
         "📱 Подписи сим-карт - 4$/шт\n"
         "🧪 Тестовый товар - 0.1$ (проверить систему)",
+        reply_markup=reply_markup
+    )
+
+async def buy_sim_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    keyboard = [
+        [InlineKeyboardButton("1 подпись - 4$", callback_data="buy_sim_1")],
+        [InlineKeyboardButton("2 подписи - 8$", callback_data="buy_sim_2")],
+        [InlineKeyboardButton("3 подписи - 12$", callback_data="buy_sim_3")],
+        [InlineKeyboardButton("4 подписи - 16$", callback_data="buy_sim_4")],
+        [InlineKeyboardButton("5 подписей - 20$", callback_data="buy_sim_5")],
+        [InlineKeyboardButton("◀️ Назад", callback_data="catalog")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await query.edit_message_text(
+        "📱 Выберите количество подписей:\n\n"
+        "Цена: 4$ за штуку\n"
+        "Доступна оплата с баланса!",
         reply_markup=reply_markup
     )
 
@@ -1409,7 +1989,8 @@ async def marketplace(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"🏪 ТОРГОВАЯ ПЛОЩАДКА\n\n"
         f"P2P маркетплейс для продажи цифровых товаров.\n\n"
         f"📊 Сейчас на витрине: {items_count} товаров\n"
-        f"💰 Комиссия платформы: 15%\n\n"
+        f"💰 Комиссия платформы: 15%\n"
+        f"💳 Оплата с баланса или криптой\n\n"
         f"Выберите действие:",
         reply_markup=reply_markup
     )
@@ -1787,187 +2368,6 @@ async def market_remove(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ]])
     )
 
-async def buy_sim_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    
-    keyboard = [
-        [InlineKeyboardButton("1 подпись - 4$", callback_data="buy_sim_1")],
-        [InlineKeyboardButton("2 подписи - 8$", callback_data="buy_sim_2")],
-        [InlineKeyboardButton("3 подписи - 12$", callback_data="buy_sim_3")],
-        [InlineKeyboardButton("4 подписи - 16$", callback_data="buy_sim_4")],
-        [InlineKeyboardButton("5 подписей - 20$", callback_data="buy_sim_5")],
-        [InlineKeyboardButton("◀️ Назад", callback_data="catalog")]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    await query.edit_message_text(
-        "📱 Выберите количество подписей:\n\n"
-        "Цена: 4$ за штуку\n"
-        "Оплата в USDT",
-        reply_markup=reply_markup
-    )
-
-async def buy_sim(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    
-    quantity = int(query.data.split("_")[2])
-    price_usd = quantity * PRICE_PER_SIM_USD
-    user_id = query.from_user.id
-    
-    if user_id not in pending_orders:
-        pending_orders[user_id] = []
-    
-    order_id = len(pending_orders[user_id]) + 1
-    
-    pending_orders[user_id].append({
-        "order_id": order_id,
-        "type": "sim",
-        "quantity": quantity,
-        "price_usd": price_usd,
-        "status": "pending_payment",
-        "date": datetime.now().isoformat()
-    })
-    
-    usdt_amount = await usd_to_usdt(price_usd)
-    current_rate = await get_usdt_rate()
-    
-    if not CP_TOKEN:
-        await query.edit_message_text(
-            "❌ Оплата временно недоступна.\n\nПопробуйте позже или обратитесь к @YungTrezinny",
-            reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton("◀️ Назад", callback_data="catalog")
-            ]])
-        )
-        return
-    
-    invoice = await create_crypto_invoice(
-        amount=usdt_amount,
-        description=f"Подписи {quantity}шт - заказ #{order_id} для user_{user_id}",
-        user_id=user_id
-    )
-    
-    if invoice and invoice.get("pay_url"):
-        if "pending_payments" not in context.user_data:
-            context.user_data["pending_payments"] = []
-        
-        context.user_data["pending_payments"].append({
-            "invoice_id": invoice["invoice_id"],
-            "pay_url": invoice["pay_url"],
-            "amount_usd": price_usd,
-            "amount_usdt": usdt_amount,
-            "quantity": quantity,
-            "order_id": order_id,
-            "user_id": user_id,
-            "type": "sim",
-            "status": "pending"
-        })
-        
-        keyboard = [
-            [InlineKeyboardButton("💳 ОПЛАТИТЬ", url=invoice["pay_url"])],
-            [InlineKeyboardButton("✅ Я ОПЛАТИЛ", callback_data=f"check_payment_{invoice['invoice_id']}")],
-            [InlineKeyboardButton("◀️ Отмена", callback_data="catalog")]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        
-        await query.edit_message_text(
-            f"💳 ОПЛАТА\n\n"
-            f"💰 {quantity} подписей = {price_usd}$ = {usdt_amount} USDT\n"
-            f"📊 Курс: 1 USDT ≈ {current_rate:.2f} ₽\n\n"
-            f"После оплаты нужно будет ввести сид-фразы.\n\n"
-            f"1. Нажми ОПЛАТИТЬ\n"
-            f"2. Оплати через Crypto Bot\n"
-            f"3. Нажми «Я ОПЛАТИЛ»",
-            reply_markup=reply_markup
-        )
-    else:
-        await query.edit_message_text(
-            "❌ Ошибка создания счёта.\n\nПоддержка: @YungTrezinny",
-            reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton("◀️ Назад", callback_data="catalog")
-            ]])
-        )
-
-async def buy_test(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    
-    price_usd = 0.1
-    user_id = query.from_user.id
-    
-    if user_id not in pending_orders:
-        pending_orders[user_id] = []
-    
-    order_id = len(pending_orders[user_id]) + 1
-    
-    pending_orders[user_id].append({
-        "order_id": order_id,
-        "type": "test",
-        "quantity": 1,
-        "price_usd": price_usd,
-        "status": "pending_payment",
-        "date": datetime.now().isoformat()
-    })
-    
-    usdt_amount = await usd_to_usdt(price_usd)
-    current_rate = await get_usdt_rate()
-    
-    if not CP_TOKEN:
-        await query.edit_message_text(
-            "❌ Оплата временно недоступна.\n\nПопробуйте позже или обратитесь к @YungTrezinny",
-            reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton("◀️ Назад", callback_data="catalog")
-            ]])
-        )
-        return
-    
-    invoice = await create_crypto_invoice(
-        amount=usdt_amount,
-        description=f"Тестовый товар - заказ #{order_id} для user_{user_id}",
-        user_id=user_id
-    )
-    
-    if invoice and invoice.get("pay_url"):
-        if "pending_payments" not in context.user_data:
-            context.user_data["pending_payments"] = []
-        
-        context.user_data["pending_payments"].append({
-            "invoice_id": invoice["invoice_id"],
-            "pay_url": invoice["pay_url"],
-            "amount_usd": price_usd,
-            "amount_usdt": usdt_amount,
-            "quantity": 1,
-            "order_id": order_id,
-            "user_id": user_id,
-            "type": "test",
-            "status": "pending"
-        })
-        
-        keyboard = [
-            [InlineKeyboardButton("💳 ОПЛАТИТЬ", url=invoice["pay_url"])],
-            [InlineKeyboardButton("✅ Я ОПЛАТИЛ", callback_data=f"check_payment_{invoice['invoice_id']}")],
-            [InlineKeyboardButton("◀️ Отмена", callback_data="catalog")]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        
-        await query.edit_message_text(
-            f"💳 ОПЛАТА\n\n"
-            f"🧪 Тестовый товар = {price_usd}$ = {usdt_amount} USDT\n"
-            f"📊 Курс: 1 USDT ≈ {current_rate:.2f} ₽\n\n"
-            f"1. Нажми ОПЛАТИТЬ\n"
-            f"2. Оплати через Crypto Bot\n"
-            f"3. Нажми «Я ОПЛАТИЛ»",
-            reply_markup=reply_markup
-        )
-    else:
-        await query.edit_message_text(
-            "❌ Ошибка создания счёта.\n\nПоддержка: @YungTrezinny",
-            reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton("◀️ Назад", callback_data="catalog")
-            ]])
-        )
-
 async def orders_history(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -1984,8 +2384,12 @@ async def orders_history(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 order_type = "🧪 ТЕСТ (0.1$)"
             elif order.get("type") == "sim":
                 order_type = f"📱 ПОДПИСИ {order.get('quantity', 1)}шт"
+            elif order.get("type") == "market":
+                order_type = f"🛒 ТОВАР #{order.get('item_id', '?')}"
             else:
                 order_type = "📦 ТОВАР"
+            
+            payment_method = "💳 Crypto" if order.get("payment_method") == "crypto" else "💰 Баланс"
             
             status = "✅ ОПЛАЧЕН" if order.get("status") == "paid" else \
                     "⏳ ОЖИДАНИЕ" if order.get("status") == "pending_payment" else \
@@ -1993,6 +2397,7 @@ async def orders_history(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
             text += f"Заказ #{order['order_id']}\n"
             text += f"Тип: {order_type}\n"
+            text += f"Способ: {payment_method}\n"
             if order.get('price_usd'):
                 text += f"Сумма: {order['price_usd']}$\n"
             text += f"Статус: {status}\n"
@@ -2151,6 +2556,7 @@ async def about(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "✅ Цена подписей: 4$ за штуку\n"
         "✅ Тестовый товар: 0.1$\n"
         "✅ Комиссия площадки: 15%\n"
+        "✅ Два способа оплаты: Crypto Bot или внутренний баланс\n"
         "✅ Поддержка 24/7\n\n"
         "Администратор: @YungTrezinny",
         reply_markup=reply_markup
@@ -2283,11 +2689,30 @@ def main():
         fallbacks=[CommandHandler("cancel", cancel_input)]
     )
     
+    # ConversationHandler для ввода сид-фразы
+    sim_seed_handler = ConversationHandler(
+        entry_points=[
+            CallbackQueryHandler(pay_sim_balance, pattern="^pay_sim_balance_"),
+            CallbackQueryHandler(pay_test_balance, pattern="^pay_test_balance$"),
+            CallbackQueryHandler(pay_sim_crypto, pattern="^pay_sim_crypto_"),
+            CallbackQueryHandler(pay_test_crypto, pattern="^pay_test_crypto$"),
+            CallbackQueryHandler(check_payment_callback, pattern="^check_payment_[0-9]+$")
+        ],
+        states={
+            WAITING_FOR_SIM_SEED: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_sim_seed),
+                CallbackQueryHandler(cancel_input, pattern="^cancel_input$")
+            ]
+        },
+        fallbacks=[CommandHandler("cancel", cancel_input)]
+    )
+    
     app.add_handler(nickname_handler)
     app.add_handler(ban_handler)
     app.add_handler(captcha_handler)
     app.add_handler(market_handler)
     app.add_handler(support_handler)
+    app.add_handler(sim_seed_handler)
     
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("reply", admin_reply))
@@ -2319,11 +2744,14 @@ def main():
     app.add_handler(CallbackQueryHandler(catalog, pattern="^catalog$"))
     app.add_handler(CallbackQueryHandler(buy_sim_menu, pattern="^buy_sim_menu$"))
     app.add_handler(CallbackQueryHandler(buy_sim, pattern="^buy_sim_[0-9]+$"))
-    app.add_handler(CallbackQueryHandler(buy_test, pattern="^buy_test_0.1$"))
+    app.add_handler(CallbackQueryHandler(buy_test, pattern="^buy_test$"))
     
     app.add_handler(CallbackQueryHandler(marketplace, pattern="^marketplace$"))
     app.add_handler(CallbackQueryHandler(market_list, pattern="^market_list$"))
     app.add_handler(CallbackQueryHandler(market_view, pattern="^market_view_[0-9]+$"))
+    app.add_handler(CallbackQueryHandler(market_buy, pattern="^market_buy_[0-9]+$"))
+    app.add_handler(CallbackQueryHandler(buy_market_crypto, pattern="^buy_market_crypto_[0-9]+$"))
+    app.add_handler(CallbackQueryHandler(buy_market_balance, pattern="^buy_market_balance_[0-9]+$"))
     app.add_handler(CallbackQueryHandler(market_my_items, pattern="^market_my_items$"))
     app.add_handler(CallbackQueryHandler(market_remove, pattern="^market_remove_[0-9]+$"))
     
@@ -2332,6 +2760,9 @@ def main():
     app.add_handler(CallbackQueryHandler(close_support, pattern="^close_support$"))
     app.add_handler(CallbackQueryHandler(about, pattern="^about$"))
     app.add_handler(CallbackQueryHandler(contacts, pattern="^contacts$"))
+    
+    # Обработчик для handle_sim_seed (когда приходит текст после оплаты)
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_sim_seed))
     
     logger.info("🚀 Бот запускается...")
     app.run_polling()

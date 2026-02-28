@@ -5,7 +5,8 @@ import aiofiles
 import aiohttp
 import uuid
 import random
-from datetime import datetime
+import asyncio
+from datetime import datetime, timedelta, timezone
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes, ConversationHandler, MessageHandler, filters
 
@@ -18,6 +19,7 @@ logger = logging.getLogger(__name__)
 
 # Состояния для ConversationHandler
 WAITING_FOR_SIM_SEED = range(1)
+WAITING_FOR_SUPPORT_MESSAGE = range(2)
 
 # Токен и канал из переменных окружения
 TOKEN = os.getenv("BOT_TOKEN")
@@ -25,11 +27,19 @@ CHANNEL_ID = os.getenv("CHANNEL_ID")
 CHANNEL_URL = os.getenv("CHANNEL_URL", f"https://t.me/{CHANNEL_ID.replace('@', '')}")
 CP_TOKEN = os.getenv("CP_TOKEN")
 ADMIN_USERNAME = "@YungTrezinny"  # Для отображения
-ADMIN_ID = 8268837047  # ЗАМЕНИ НА РЕАЛЬНЫЙ ЧИСЛОВОЙ ID АДМИНА!!! Получить можно через @userinfobot
+ADMIN_ID = 123456789  # ЗАМЕНИ НА РЕАЛЬНЫЙ ЧИСЛОВОЙ ID АДМИНА!!! Получить можно через @userinfobot
 
 # Запасной курс USDT/RUB (1$ = 90₽ примерно)
 DEFAULT_USDT_RATE = 90.0
 PRICE_PER_SIM_USD = 4.0  # Цена 4$ за штуку
+
+# Время сброса кликера (13:00 МСК = 10:00 UTC)
+RESET_HOUR = 10
+RESET_MINUTE = 0
+
+# Количество кликов для бесплатной подписи
+CLICKS_REQUIRED = 54999
+CHECKPOINT_INTERVAL = 500
 
 if not TOKEN:
     raise ValueError("❌ НЕТ BOT_TOKEN В ОКРУЖЕНИИ!")
@@ -46,9 +56,19 @@ OPERATORS = [
     "МТС"
 ]
 
+# ============================================
+# СТРУКТУРЫ ДАННЫХ
+# ============================================
+
 # Временное хранилище для заказов
 pending_orders = {}
 orders = {}
+
+# Хранилище для чатов поддержки
+support_chats = {}
+
+# Хранилище для кликера
+clicker_data = {}
 
 # ============================================
 # КЭШ ДЛЯ КУРСА ВАЛЮТ
@@ -78,6 +98,70 @@ async def get_usdt_rate():
 async def usd_to_usdt(usd_amount):
     """Конвертирует доллары в USDT (1:1 примерно)"""
     return round(usd_amount, 2)
+
+# ============================================
+# ФУНКЦИИ ДЛЯ КЛИКЕРА
+# ============================================
+
+def get_next_reset_time():
+    """Возвращает следующее время сброса (сегодня в 13:00 МСК или завтра если уже прошло)"""
+    now = datetime.now(timezone.utc)
+    reset_time = now.replace(hour=RESET_HOUR, minute=RESET_MINUTE, second=0, microsecond=0)
+    
+    if now >= reset_time:
+        reset_time += timedelta(days=1)
+    
+    return reset_time
+
+def format_time_remaining(seconds):
+    """Форматирует оставшееся время"""
+    hours = seconds // 3600
+    minutes = (seconds % 3600) // 60
+    return f"{hours}ч {minutes}м"
+
+async def reset_clicks_if_needed(user_id):
+    """Сбрасывает клики если наступило время сброса"""
+    if user_id not in clicker_data:
+        return
+    
+    user_data = clicker_data[user_id]
+    now = datetime.now(timezone.utc)
+    
+    # Проверяем не пора ли сбросить
+    if 'last_reset' in user_data:
+        last_reset = datetime.fromisoformat(user_data['last_reset'])
+        # Если последний сброс был до сегодняшнего времени сброса
+        today_reset = now.replace(hour=RESET_HOUR, minute=RESET_MINUTE, second=0, microsecond=0)
+        if last_reset < today_reset and now >= today_reset:
+            user_data['clicks'] = 0
+            user_data['last_reset'] = now.isoformat()
+            user_data['checkpoint'] = 0
+            user_data['verification_pending'] = False
+            logger.info(f"Клики сброшены для пользователя {user_id}")
+
+async def check_weekly_cooldown(user_id):
+    """Проверяет, прошла ли неделя с последнего получения бесплатной подписи"""
+    if user_id not in clicker_data:
+        return True
+    
+    user_data = clicker_data[user_id]
+    if 'last_free_reward' not in user_data:
+        return True
+    
+    last_reward = datetime.fromisoformat(user_data['last_free_reward'])
+    now = datetime.now(timezone.utc)
+    
+    return (now - last_reward).total_seconds() > 7 * 24 * 3600  # 7 дней
+
+async def generate_captcha():
+    """Генерирует простую капчу"""
+    num1 = random.randint(1, 10)
+    num2 = random.randint(1, 10)
+    result = num1 + num2
+    return {
+        'question': f"{num1} + {num2} = ?",
+        'answer': str(result)
+    }
 
 # ============================================
 # РАЗДЕЛЫ FAQ
@@ -143,8 +227,10 @@ FAQ_SECTIONS = [
 • 3 подписи - 12$
 • 4 подписи - 16$
 • 5 подписей - 20$
+• 🧪 Тестовый товар - 0.1$ (проверка системы)
 
-🧪 Тестовый вариант - 0$ (бесплатно)
+🔥 БЕСПЛАТНО:
+• Кликер - нажми 54999 раз и получи подпись бесплатно!
 
 Оплата в USDT (криптовалюта)
 Курс конвертации автоматический"""
@@ -188,6 +274,7 @@ FAQ_SECTIONS = [
 ❌ Использовать в мошеннических целях
 ❌ Пытаться взломать бота
 ❌ Создавать несколько аккаунтов
+❌ Использовать автокликеры (система защиты определит)
 
 ✅ РЕКОМЕНДУЕТСЯ:
 • Использовать отдельный пароль для покупок
@@ -219,6 +306,7 @@ FAQ_SECTIONS = [
 • Замена товара
 • Возврат средств
 • Общие вопросы
+• Вопросы по кликеру
 
 🔹 СРОКИ ОТВЕТА:
 • Обычный вопрос: 5-15 минут
@@ -368,14 +456,16 @@ async def go_to_shop(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [InlineKeyboardButton("🛍 Каталог", callback_data="catalog")],
+        [InlineKeyboardButton("🖱 Кликер (бесплатно)", callback_data="clicker_menu")],
         [InlineKeyboardButton("📦 Мои заказы", callback_data="orders")],
+        [InlineKeyboardButton("💬 Чат с поддержкой", callback_data="support_chat")],
         [InlineKeyboardButton("ℹ️ О нас", callback_data="about")],
         [InlineKeyboardButton("📞 Контакты", callback_data="contacts")],
         [InlineKeyboardButton("❤️ Поддержать проект", callback_data="donate")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    text = f"👋 Привет!\n\n✅ FAQ изучен. Добро пожаловать в магазин подписей сим-карт!"
+    text = f"👋 Привет!\n\n✅ FAQ изучен. Добро пожаловать в магазин подписей сим-карт!\n\n🔥 НОВИНКА: Кликер - нажми 54999 раз и получи подпись бесплатно!"
     
     if update.callback_query:
         await update.callback_query.edit_message_text(text, reply_markup=reply_markup)
@@ -390,8 +480,8 @@ async def catalog(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     
     keyboard = [
-        [InlineKeyboardButton("🧪 Тестовый товар (бесплатно)", callback_data="test_sim")],
-        [InlineKeyboardButton("📱 Купить подписи", callback_data="buy_sim_menu")],
+        [InlineKeyboardButton("📱 Купить подписи (4$)", callback_data="buy_sim_menu")],
+        [InlineKeyboardButton("🧪 Тестовый товар (0.1$)", callback_data="buy_test_0.1")],
         [InlineKeyboardButton("◀️ Назад в меню", callback_data="back_to_menu")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -399,8 +489,8 @@ async def catalog(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.edit_message_text(
         "🛍 Каталог\n\n"
         "Выберите действие:\n\n"
-        "🧪 Тестовый товар - попробовать систему бесплатно\n"
-        "📱 Купить подписи - приобрести реальные подписи",
+        "📱 Купить подписи - реальные подписи 4$/шт\n"
+        "🧪 Тестовый товар - 0.1$ (проверить систему)",
         reply_markup=reply_markup
     )
 
@@ -439,6 +529,27 @@ async def buy_sim(update: Update, context: ContextTypes.DEFAULT_TYPE):
     price_usd = quantity * PRICE_PER_SIM_USD
     user_id = query.from_user.id
     
+    await process_payment(update, context, "sim", quantity, price_usd)
+
+# ============================================
+# ТЕСТОВЫЙ ТОВАР ЗА 0.1 USDT
+# ============================================
+async def buy_test(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    price_usd = 0.1
+    user_id = query.from_user.id
+    
+    await process_payment(update, context, "test", 1, price_usd)
+
+# ============================================
+# ОБЩАЯ ФУНКЦИЯ ДЛЯ ОБРАБОТКИ ПЛАТЕЖЕЙ
+# ============================================
+async def process_payment(update: Update, context: ContextTypes.DEFAULT_TYPE, product_type, quantity, price_usd):
+    query = update.callback_query
+    user_id = query.from_user.id
+    
     # Сохраняем информацию о заказе
     if user_id not in pending_orders:
         pending_orders[user_id] = []
@@ -447,7 +558,7 @@ async def buy_sim(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     pending_orders[user_id].append({
         "order_id": order_id,
-        "type": "sim",
+        "type": product_type,
         "quantity": quantity,
         "price_usd": price_usd,
         "status": "pending_payment",
@@ -462,12 +573,13 @@ async def buy_sim(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(
             "❌ Оплата временно недоступна.\n\nПопробуйте позже или обратитесь к @YungTrezinny",
             reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton("◀️ Назад", callback_data="buy_sim_menu")
+                InlineKeyboardButton("◀️ Назад", callback_data="catalog")
             ]])
         )
         return
     
-    description = f"Подписи сим-карт {quantity} шт - заказ #{order_id} для user_{user_id}"
+    product_name = "ТЕСТОВЫЙ" if product_type == "test" else f"Подписи сим-карт {quantity} шт"
+    description = f"{product_name} - заказ #{order_id} для user_{user_id}"
     
     invoice = await create_crypto_invoice(
         amount=usdt_amount,
@@ -488,21 +600,24 @@ async def buy_sim(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "quantity": quantity,
             "order_id": order_id,
             "user_id": user_id,
+            "type": product_type,
             "status": "pending"
         })
         
         keyboard = [
             [InlineKeyboardButton("💳 ОПЛАТИТЬ", url=invoice["pay_url"])],
             [InlineKeyboardButton("✅ Я ОПЛАТИЛ", callback_data=f"check_payment_{invoice['invoice_id']}")],
-            [InlineKeyboardButton("◀️ Отмена", callback_data="buy_sim_menu")]
+            [InlineKeyboardButton("◀️ Отмена", callback_data="catalog")]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
+        product_text = "ТЕСТОВЫЙ ТОВАР" if product_type == "test" else f"{quantity} ПОДПИСЕЙ"
+        
         await query.edit_message_text(
             f"💳 ОПЛАТА\n\n"
-            f"💰 {quantity} подписей = {price_usd}$ = {usdt_amount} USDT\n"
+            f"💰 {product_text} = {price_usd}$ = {usdt_amount} USDT\n"
             f"📊 Курс: 1 USDT ≈ {current_rate:.2f} ₽\n\n"
-            f"После оплаты нужно будет ввести сид-фразы сим-карт.\n\n"
+            f"После оплаты нужно будет ввести сид-фразы.\n\n"
             f"1. Нажми ОПЛАТИТЬ\n"
             f"2. Оплати через Crypto Bot\n"
             f"3. Нажми «Я ОПЛАТИЛ»",
@@ -512,20 +627,229 @@ async def buy_sim(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(
             "❌ Ошибка создания счёта.\n\nПоддержка: @YungTrezinny",
             reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton("◀️ Назад", callback_data="buy_sim_menu")
+                InlineKeyboardButton("◀️ Назад", callback_data="catalog")
             ]])
         )
 
 # ============================================
-# ТЕСТОВЫЙ ТОВАР (БЕСПЛАТНО)
+# КЛИКЕР - ГЛАВНОЕ МЕНЮ
 # ============================================
-async def test_sim(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def clicker_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     
     user_id = query.from_user.id
     
-    # Сохраняем тестовый заказ
+    # Инициализируем данные пользователя если нужно
+    if user_id not in clicker_data:
+        clicker_data[user_id] = {
+            'clicks': 0,
+            'last_reset': datetime.now(timezone.utc).isoformat(),
+            'checkpoint': 0,
+            'verification_pending': False
+        }
+    
+    # Проверяем сброс
+    await reset_clicks_if_needed(user_id)
+    
+    user_data = clicker_data[user_id]
+    clicks = user_data['clicks']
+    
+    # Проверяем кулдаун на получение
+    can_get_free = await check_weekly_cooldown(user_id)
+    
+    # Рассчитываем оставшееся время до сброса
+    next_reset = get_next_reset_time()
+    now = datetime.now(timezone.utc)
+    time_left = (next_reset - now).total_seconds()
+    time_str = format_time_remaining(time_left)
+    
+    # Проверяем достаточно ли кликов
+    if clicks >= CLICKS_REQUIRED and can_get_free and not user_data.get('claimed_this_session', False):
+        # Можно получить подпись
+        keyboard = [
+            [InlineKeyboardButton("🎁 ПОЛУЧИТЬ ПОДПИСЬ", callback_data="claim_free_sim")],
+            [InlineKeyboardButton("◀️ Назад в меню", callback_data="back_to_menu")]
+        ]
+        
+        await query.edit_message_text(
+            f"🎉 ПОЗДРАВЛЯЕМ!\n\n"
+            f"Вы накликали {clicks} из {CLICKS_REQUIRED} кликов!\n\n"
+            f"Нажмите кнопку ниже, чтобы получить бесплатную подпись.",
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+    else:
+        # Продолжаем кликать
+        progress = int((clicks / CLICKS_REQUIRED) * 100)
+        progress_bar = "▓" * (progress // 10) + "░" * (10 - (progress // 10))
+        
+        status_text = ""
+        if not can_get_free:
+            status_text = "\n⏳ Вы уже получали подпись на этой неделе. Ждите 7 дней."
+        elif user_data.get('verification_pending', False):
+            status_text = "\n⚠️ Требуется проверка! Нажмите кнопку ниже."
+        
+        keyboard = [
+            [InlineKeyboardButton("🖱 КЛИК!", callback_data="clicker_click")],
+        ]
+        
+        if user_data.get('verification_pending', False):
+            keyboard.append([InlineKeyboardButton("✅ ПРОВЕРКА", callback_data="clicker_verify")])
+        
+        keyboard.append([InlineKeyboardButton("◀️ Назад в меню", callback_data="back_to_menu")])
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await query.edit_message_text(
+            f"🖱 КЛИКЕР\n\n"
+            f"Прогресс: {progress_bar}\n"
+            f"Клики: {clicks} / {CLICKS_REQUIRED} ({progress}%)\n\n"
+            f"Сброс через: {time_str}\n"
+            f"Цель: получить бесплатную подпись!{status_text}",
+            reply_markup=reply_markup
+        )
+
+# ============================================
+# КЛИКЕР - ОБРАБОТКА КЛИКА
+# ============================================
+async def clicker_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    user_id = query.from_user.id
+    
+    # Проверяем сброс
+    await reset_clicks_if_needed(user_id)
+    
+    user_data = clicker_data.get(user_id, {
+        'clicks': 0,
+        'last_reset': datetime.now(timezone.utc).isoformat(),
+        'checkpoint': 0,
+        'verification_pending': False
+    })
+    
+    # Проверяем не висит ли проверка
+    if user_data.get('verification_pending', False):
+        await query.edit_message_text(
+            "⚠️ Сначала пройдите проверку!",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("✅ ПРОВЕРКА", callback_data="clicker_verify")
+            ]])
+        )
+        return
+    
+    # Добавляем клик
+    user_data['clicks'] = user_data.get('clicks', 0) + 1
+    clicks = user_data['clicks']
+    
+    # Проверяем нужно ли показать капчу
+    checkpoint = user_data.get('checkpoint', 0)
+    if clicks // CHECKPOINT_INTERVAL > checkpoint:
+        user_data['checkpoint'] = clicks // CHECKPOINT_INTERVAL
+        user_data['verification_pending'] = True
+        
+        # Генерируем капчу
+        captcha = await generate_captcha()
+        user_data['captcha'] = captcha
+        
+        await query.edit_message_text(
+            f"🔐 ПРОВЕРКА\n\n"
+            f"Вы накликали {clicks} кликов. Докажите что вы не бот.\n\n"
+            f"Вопрос: {captcha['question']}\n\n"
+            f"Напишите ответ в чат:",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("◀️ Отмена", callback_data="clicker_menu")
+            ]])
+        )
+        
+        # Переходим в режим ожидания ответа
+        context.user_data['awaiting_captcha'] = True
+        clicker_data[user_id] = user_data
+        return
+    
+    clicker_data[user_id] = user_data
+    
+    # Возвращаемся в меню кликера
+    await clicker_menu(update, context)
+
+# ============================================
+# ОБРАБОТЧИК ОТВЕТА НА КАПЧУ
+# ============================================
+async def handle_captcha_answer(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    answer = update.message.text.strip()
+    
+    if user_id not in clicker_data or not context.user_data.get('awaiting_captcha', False):
+        return
+    
+    user_data = clicker_data[user_id]
+    captcha = user_data.get('captcha', {})
+    
+    if answer == captcha.get('answer', ''):
+        # Правильный ответ
+        user_data['verification_pending'] = False
+        clicker_data[user_id] = user_data
+        context.user_data['awaiting_captcha'] = False
+        
+        await update.message.reply_text("✅ Проверка пройдена! Продолжайте кликать.")
+        
+        # Возвращаем в меню кликера
+        # Создаем фиктивный callback_query
+        class FakeQuery:
+            def __init__(self, user_id):
+                self.from_user = type('obj', (object,), {'id': user_id})
+                self.message = update.message
+            
+            async def answer(self):
+                pass
+        
+        fake_query = FakeQuery(user_id)
+        await clicker_menu(Update(update.update_id, callback_query=fake_query), context)
+    else:
+        # Неправильный ответ
+        await update.message.reply_text(
+            f"❌ Неправильный ответ. Попробуйте снова.\n\n"
+            f"Вопрос: {captcha.get('question', '')}\n"
+            f"Напишите правильный ответ:"
+        )
+
+# ============================================
+# ПОЛУЧЕНИЕ БЕСПЛАТНОЙ ПОДПИСИ
+# ============================================
+async def claim_free_sim(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    user_id = query.from_user.id
+    
+    # Проверяем кулдаун
+    if not await check_weekly_cooldown(user_id):
+        await query.edit_message_text(
+            "❌ Вы уже получали бесплатную подпись на этой неделе.\n"
+            "Попробуйте снова через 7 дней.",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("◀️ Назад", callback_data="clicker_menu")
+            ]])
+        )
+        return
+    
+    user_data = clicker_data.get(user_id, {})
+    if user_data.get('clicks', 0) < CLICKS_REQUIRED:
+        await query.edit_message_text(
+            "❌ Недостаточно кликов!",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("◀️ Назад", callback_data="clicker_menu")
+            ]])
+        )
+        return
+    
+    # Сбрасываем клики и отмечаем получение
+    user_data['clicks'] = 0
+    user_data['last_free_reward'] = datetime.now(timezone.utc).isoformat()
+    user_data['claimed_this_session'] = True
+    clicker_data[user_id] = user_data
+    
+    # Переходим к вводу сид-фразы (как при обычной покупке)
     if user_id not in pending_orders:
         pending_orders[user_id] = []
     
@@ -533,17 +857,16 @@ async def test_sim(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     pending_orders[user_id].append({
         "order_id": order_id,
-        "type": "test_sim",
+        "type": "free_sim",
         "quantity": 1,
         "price_usd": 0,
-        "status": "test",
+        "status": "free",
         "date": datetime.now().isoformat()
     })
     
-    # Сразу переходим к вводу сид-фразы
     context.user_data["current_order"] = {
         "order_id": order_id,
-        "type": "test_sim",
+        "type": "free_sim",
         "quantity": 1,
         "user_id": user_id
     }
@@ -552,16 +875,159 @@ async def test_sim(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     await query.edit_message_text(
-        f"🧪 ТЕСТОВЫЙ РЕЖИМ\n\n"
-        f"Отправьте сид-фразу для тестовой сим-карты.\n\n"
-        f"📌 ПРИМЕР сид-фразы (Мегафон):\n"
+        f"🎁 БЕСПЛАТНАЯ ПОДПИСЬ\n\n"
+        f"Отправьте сид-фразу для сим-карты.\n\n"
+        f"📌 ПРИМЕР:\n"
         f"`123456789012345678`\n\n"
-        f"Она будет отправлена администратору @YungTrezinny для проверки.",
+        f"Данные будут переданы администратору.",
         reply_markup=reply_markup,
         parse_mode='Markdown'
     )
     
+    # Уведомляем админа
+    admin_message = (
+        f"🎁 БЕСПЛАТНАЯ ПОДПИСЬ ГОТОВА\n\n"
+        f"👤 Пользователь: {query.from_user.first_name}\n"
+        f"🆔 ID: {user_id}\n"
+        f"📦 Тип: Бесплатный кликер\n"
+        f"🔢 Кликов: {CLICKS_REQUIRED}\n\n"
+        f"Ожидает ввода сид-фразы."
+    )
+    
+    try:
+        if ADMIN_ID and ADMIN_ID != 123456789:
+            await context.bot.send_message(chat_id=ADMIN_ID, text=admin_message)
+    except:
+        pass
+    
     return WAITING_FOR_SIM_SEED
+
+# ============================================
+# ЧАТ С ПОДДЕРЖКОЙ
+# ============================================
+async def support_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    user_id = query.from_user.id
+    
+    # Проверяем есть ли активный чат
+    if user_id in support_chats and support_chats[user_id].get('active', False):
+        keyboard = [
+            [InlineKeyboardButton("❌ Закрыть чат", callback_data="close_support")],
+            [InlineKeyboardButton("◀️ Назад", callback_data="back_to_menu")]
+        ]
+        
+        await query.edit_message_text(
+            f"💬 Чат с поддержкой уже активен.\n\n"
+            f"Просто напишите сообщение, и оно будет отправлено администратору.",
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+    else:
+        keyboard = [
+            [InlineKeyboardButton("✅ Начать чат", callback_data="start_support")],
+            [InlineKeyboardButton("📞 Контакты", callback_data="contacts")],
+            [InlineKeyboardButton("◀️ Назад", callback_data="back_to_menu")]
+        ]
+        
+        await query.edit_message_text(
+            f"💬 Чат с поддержкой\n\n"
+            f"Вы можете написать администратору напрямую.\n\n"
+            f"Все сообщения будут пересылаться @YungTrezinny.",
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+
+async def start_support(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    user_id = query.from_user.id
+    
+    # Создаем чат
+    support_chats[user_id] = {
+        'active': True,
+        'started': datetime.now().isoformat()
+    }
+    
+    keyboard = [[InlineKeyboardButton("❌ Закрыть чат", callback_data="close_support")]]
+    
+    await query.edit_message_text(
+        f"💬 Чат с поддержкой начат!\n\n"
+        f"Теперь вы можете писать сообщения, и они будут отправляться администратору.\n\n"
+        f"Администратор ответит вам в этом же чате.",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+    
+    # Уведомляем админа
+    admin_message = (
+        f"💬 НОВЫЙ ЧАТ\n\n"
+        f"👤 Пользователь: {query.from_user.first_name}\n"
+        f"🆔 ID: {user_id}\n"
+        f"📅 Дата: {datetime.now().strftime('%d.%m.%Y %H:%M:%S')}"
+    )
+    
+    try:
+        if ADMIN_ID and ADMIN_ID != 123456789:
+            await context.bot.send_message(chat_id=ADMIN_ID, text=admin_message)
+    except:
+        pass
+    
+    return WAITING_FOR_SUPPORT_MESSAGE
+
+async def close_support(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    user_id = query.from_user.id
+    
+    if user_id in support_chats:
+        support_chats[user_id]['active'] = False
+    
+    await query.edit_message_text(
+        f"✅ Чат с поддержкой закрыт.",
+        reply_markup=InlineKeyboardMarkup([[
+            InlineKeyboardButton("◀️ Назад", callback_data="back_to_menu")
+        ]])
+    )
+
+async def handle_support_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    message_text = update.message.text
+    
+    # Проверяем есть ли активный чат
+    if user_id not in support_chats or not support_chats[user_id].get('active', False):
+        await update.message.reply_text(
+            "❌ У вас нет активного чата с поддержкой.\n"
+            "Начните новый через меню."
+        )
+        return ConversationHandler.END
+    
+    # Отправляем сообщение админу
+    admin_message = (
+        f"💬 СООБЩЕНИЕ ОТ ПОЛЬЗОВАТЕЛЯ\n\n"
+        f"👤 {update.effective_user.first_name}\n"
+        f"🆔 ID: {user_id}\n"
+        f"📝 Сообщение:\n{message_text}\n\n"
+        f"Ответьте через /reply {user_id} текст"
+    )
+    
+    try:
+        if ADMIN_ID and ADMIN_ID != 123456789:
+            await context.bot.send_message(chat_id=ADMIN_ID, text=admin_message)
+            await update.message.reply_text("✅ Сообщение отправлено администратору.")
+        else:
+            await update.message.reply_text(
+                f"❌ Ошибка отправки. Напишите напрямую @YungTrezinny\n\n"
+                f"Ваше сообщение:\n{message_text}"
+            )
+    except Exception as e:
+        logger.error(f"Ошибка отправки сообщения админу: {e}")
+        await update.message.reply_text(
+            f"❌ Ошибка отправки. Напишите напрямую @YungTrezinny\n\n"
+            f"Ваше сообщение:\n{message_text}"
+        )
+    
+    return WAITING_FOR_SUPPORT_MESSAGE
 
 # ============================================
 # ОБРАБОТЧИК ВВОДА СИД-ФРАЗЫ
@@ -580,11 +1046,15 @@ async def handle_sim_seed(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return ConversationHandler.END
     
     # Формируем сообщение для админа
+    order_type = "ТЕСТОВЫЙ" if current_order['type'] == 'test' else \
+                 "БЕСПЛАТНЫЙ" if current_order['type'] == 'free_sim' else \
+                 "ПЛАТНЫЙ"
+    
     admin_message = (
         f"🔔 НОВЫЙ ЗАКАЗ\n\n"
         f"👤 Покупатель: {update.effective_user.first_name}\n"
         f"🆔 ID: {user_id}\n"
-        f"📦 Тип: {'ТЕСТОВЫЙ' if current_order['type'] == 'test_sim' else 'ПЛАТНЫЙ'}\n"
+        f"📦 Тип: {order_type}\n"
         f"🔢 Количество: {current_order['quantity']} шт\n"
         f"📝 Сид-фраза:\n{seed_text}\n\n"
         f"📅 Дата: {datetime.now().strftime('%d.%m.%Y %H:%M:%S')}"
@@ -594,7 +1064,7 @@ async def handle_sim_seed(update: Update, context: ContextTypes.DEFAULT_TYPE):
     admin_notified = False
     admin_error = ""
     
-    # Сначала пробуем отправить через числовой ID
+    # Сначала пробуем через числовой ID
     if ADMIN_ID and ADMIN_ID != 123456789:
         try:
             await context.bot.send_message(
@@ -656,24 +1126,6 @@ async def handle_sim_seed(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Возвращаем в главное меню
     await show_main_menu(update, context)
     
-    return ConversationHandler.END
-
-# ============================================
-# ОТМЕНА ВВОДА
-# ============================================
-async def cancel_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработчик отмены ввода"""
-    query = update.callback_query
-    if query:
-        await query.answer()
-        context.user_data.pop("current_order", None)
-        await show_main_menu(update, context)
-        return ConversationHandler.END
-    
-    # Если это не callback, а просто команда
-    await update.message.reply_text("❌ Ввод отменён.")
-    context.user_data.pop("current_order", None)
-    await show_main_menu(update, context)
     return ConversationHandler.END
 
 # ============================================
@@ -769,7 +1221,7 @@ async def check_payment_callback(update: Update, context: ContextTypes.DEFAULT_T
         # Сохраняем информацию о заказе для ввода сид-фразы
         context.user_data["current_order"] = {
             "order_id": payment_info["order_id"],
-            "type": "sim",
+            "type": payment_info["type"],
             "quantity": payment_info["quantity"],
             "user_id": user_id
         }
@@ -777,9 +1229,11 @@ async def check_payment_callback(update: Update, context: ContextTypes.DEFAULT_T
         keyboard = [[InlineKeyboardButton("❌ Отмена", callback_data="cancel_input")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
+        product_text = "ТЕСТОВЫЙ ТОВАР" if payment_info["type"] == "test" else f"{payment_info['quantity']} ПОДПИСИ(ЕЙ)"
+        
         await query.edit_message_text(
             f"✅ Платёж подтверждён!\n\n"
-            f"Теперь отправьте сид-фразу(ы) для сим-карт.\n\n"
+            f"Теперь отправьте сид-фразу(ы) для {product_text}.\n\n"
             f"📌 ПРИМЕР сид-фразы (Мегафон):\n"
             f"`123456789012345678`\n\n"
             f"Если покупаете несколько штук, отправляйте каждую с новой строки.\n\n"
@@ -812,7 +1266,13 @@ async def orders_history(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         text = "📦 ИСТОРИЯ ЗАКАЗОВ:\n\n"
         for order in user_orders[-10:]:  # Последние 10 заказов
-            order_type = "🧪 ТЕСТ" if order.get("type") == "test_sim" else "📱 ПОДПИСИ"
+            if order.get("type") == "test":
+                order_type = "🧪 ТЕСТ (0.1$)"
+            elif order.get("type") == "free_sim":
+                order_type = "🎁 БЕСПЛАТНО"
+            else:
+                order_type = f"📱 ПОДПИСИ {order.get('quantity', 1)}шт"
+            
             status = "✅ ОПЛАЧЕН" if order.get("status") == "paid" else \
                     "⏳ ОЖИДАНИЕ" if order.get("status") == "pending_payment" else \
                     "📤 ЗАВЕРШЁН" if order.get("status") == "completed" else \
@@ -821,7 +1281,6 @@ async def orders_history(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
             text += f"Заказ #{order['order_id']}\n"
             text += f"Тип: {order_type}\n"
-            text += f"Кол-во: {order.get('quantity', 1)} шт\n"
             if order.get('price_usd'):
                 text += f"Сумма: {order['price_usd']}$\n"
             text += f"Статус: {status}\n"
@@ -830,6 +1289,24 @@ async def orders_history(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [[InlineKeyboardButton("◀️ Назад в меню", callback_data="back_to_menu")]]
     reply_markup = InlineKeyboardMarkup(keyboard)
     await query.edit_message_text(text, reply_markup=reply_markup)
+
+# ============================================
+# ОТМЕНА ВВОДА
+# ============================================
+async def cancel_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработчик отмены ввода"""
+    query = update.callback_query
+    if query:
+        await query.answer()
+        context.user_data.pop("current_order", None)
+        await show_main_menu(update, context)
+        return ConversationHandler.END
+    
+    # Если это не callback, а просто команда
+    await update.message.reply_text("❌ Ввод отменён.")
+    context.user_data.pop("current_order", None)
+    await show_main_menu(update, context)
+    return ConversationHandler.END
 
 # ============================================
 # О НАС
@@ -845,6 +1322,8 @@ async def about(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "✅ Магазин подписей сим-карт\n"
         "✅ Операторы: Мегафон, СберМобайл, Теле2, Билайн, Yota, МТС\n"
         "✅ Цена: 4$ за подпись\n"
+        "✅ Тестовый товар: 0.1$\n"
+        "✅ Бесплатный кликер: 54999 кликов = подпись\n"
         "✅ Мгновенная обработка\n"
         "✅ Поддержка 24/7\n\n"
         "Администратор: @YungTrezinny",
@@ -986,15 +1465,44 @@ async def back_to_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await show_main_menu(update, context)
 
 # ============================================
+# КОМАНДА ДЛЯ АДМИНА (ОТВЕТ В ЧАТ)
+# ============================================
+async def admin_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Команда для админа: /reply user_id текст"""
+    if update.effective_user.id != ADMIN_ID:
+        await update.message.reply_text("❌ У вас нет прав для этой команды.")
+        return
+    
+    try:
+        # Формат: /reply 123456789 Привет, как дела?
+        args = context.args
+        if len(args) < 2:
+            await update.message.reply_text("❌ Формат: /reply user_id текст")
+            return
+        
+        user_id = int(args[0])
+        reply_text = ' '.join(args[1:])
+        
+        await context.bot.send_message(
+            chat_id=user_id,
+            text=f"📩 Ответ от администратора:\n\n{reply_text}"
+        )
+        
+        await update.message.reply_text(f"✅ Ответ отправлен пользователю {user_id}")
+        
+    except Exception as e:
+        await update.message.reply_text(f"❌ Ошибка: {e}")
+
+# ============================================
 # MAIN
 # ============================================
 def main():
     app = Application.builder().token(TOKEN).build()
     
     # ConversationHandler для ввода сид-фразы
-    conv_handler = ConversationHandler(
+    sim_seed_handler = ConversationHandler(
         entry_points=[
-            CallbackQueryHandler(test_sim, pattern="^test_sim$"),
+            CallbackQueryHandler(claim_free_sim, pattern="^claim_free_sim$"),
             CallbackQueryHandler(check_payment_callback, pattern="^check_payment_[0-9]+$")
         ],
         states={
@@ -1006,10 +1514,28 @@ def main():
         fallbacks=[CommandHandler("cancel", cancel_input)]
     )
     
-    app.add_handler(conv_handler)
+    # ConversationHandler для чата с поддержкой
+    support_handler = ConversationHandler(
+        entry_points=[
+            CallbackQueryHandler(start_support, pattern="^start_support$")
+        ],
+        states={
+            WAITING_FOR_SUPPORT_MESSAGE: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_support_message),
+                CallbackQueryHandler(close_support, pattern="^close_support$")
+            ]
+        },
+        fallbacks=[CommandHandler("cancel", lambda u,c: ConversationHandler.END)]
+    )
+    
+    app.add_handler(sim_seed_handler)
+    app.add_handler(support_handler)
     
     # Команда /start
     app.add_handler(CommandHandler("start", start))
+    
+    # Команда для админа
+    app.add_handler(CommandHandler("reply", admin_reply))
     
     # Обработчики callback-запросов
     app.add_handler(CallbackQueryHandler(check_subscription_callback, pattern="check_sub"))
@@ -1023,6 +1549,15 @@ def main():
     app.add_handler(CallbackQueryHandler(catalog, pattern="catalog"))
     app.add_handler(CallbackQueryHandler(buy_sim_menu, pattern="buy_sim_menu"))
     app.add_handler(CallbackQueryHandler(buy_sim, pattern="^buy_sim_[0-9]+$"))
+    app.add_handler(CallbackQueryHandler(buy_test, pattern="^buy_test_0.1$"))
+    
+    # Кликер
+    app.add_handler(CallbackQueryHandler(clicker_menu, pattern="clicker_menu"))
+    app.add_handler(CallbackQueryHandler(clicker_click, pattern="clicker_click"))
+    
+    # Чат поддержки
+    app.add_handler(CallbackQueryHandler(support_chat, pattern="support_chat"))
+    app.add_handler(CallbackQueryHandler(close_support, pattern="close_support"))
     
     # Заказы и прочее
     app.add_handler(CallbackQueryHandler(orders_history, pattern="orders"))
@@ -1033,6 +1568,9 @@ def main():
     app.add_handler(CallbackQueryHandler(donate, pattern="^donate$"))
     app.add_handler(CallbackQueryHandler(donate_amount, pattern="^donate_[0-9.]+$"))
     app.add_handler(CallbackQueryHandler(check_donate_callback, pattern="^check_donate_[0-9]+$"))
+    
+    # Обработчик текстовых сообщений для капчи
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_captcha_answer))
     
     logger.info("🚀 Бот запускается...")
     app.run_polling()

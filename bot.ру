@@ -25,7 +25,7 @@ CHANNEL_ID = os.getenv("CHANNEL_ID")
 CHANNEL_URL = os.getenv("CHANNEL_URL", f"https://t.me/{CHANNEL_ID.replace('@', '')}")
 CP_TOKEN = os.getenv("CP_TOKEN")
 ADMIN_USERNAME = "@YungTrezinny"  # Для отображения
-ADMIN_ID = 8268837047  # ЗАМЕНИ НА РЕАЛЬНЫЙ ЧИСЛОВОЙ ID АДМИНА!!! Получить можно через @userinfobot
+ADMIN_ID = 123456789  # ЗАМЕНИ НА РЕАЛЬНЫЙ ЧИСЛОВОЙ ID АДМИНА!!! Получить можно через @userinfobot
 
 # Запасной курс USDT/RUB (1$ = 90₽ примерно)
 DEFAULT_USDT_RATE = 90.0
@@ -80,7 +80,7 @@ async def usd_to_usdt(usd_amount):
     return round(usd_amount, 2)
 
 # ============================================
-# РАЗДЕЛЫ FAQ (НОВЫЕ)
+# РАЗДЕЛЫ FAQ
 # ============================================
 FAQ_SECTIONS = [
     {
@@ -111,9 +111,12 @@ FAQ_SECTIONS = [
 Это цифровые ключи и сид-фразы, которые позволяют управлять сим-картами удаленно.
 
 🔹 Формат данных:
-• Сид-фраза (seed phrase)
+• Сид-фраза (seed phrase) - обычно 18 цифр
 • Логин/пароль от личного кабинета
 • Дополнительная информация
+
+🔹 ПРИМЕР сид-фразы для Мегафон:
+`123456789012345678`
 
 🔹 Поддерживаемые операторы:
 • Мегафон
@@ -551,8 +554,11 @@ async def test_sim(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.edit_message_text(
         f"🧪 ТЕСТОВЫЙ РЕЖИМ\n\n"
         f"Отправьте сид-фразу для тестовой сим-карты.\n\n"
+        f"📌 ПРИМЕР сид-фразы (Мегафон):\n"
+        f"`123456789012345678`\n\n"
         f"Она будет отправлена администратору @YungTrezinny для проверки.",
-        reply_markup=reply_markup
+        reply_markup=reply_markup,
+        parse_mode='Markdown'
     )
     
     return WAITING_FOR_SIM_SEED
@@ -584,42 +590,65 @@ async def handle_sim_seed(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"📅 Дата: {datetime.now().strftime('%d.%m.%Y %H:%M:%S')}"
     )
     
-    # Пытаемся отправить админу по числовому ID
-    try:
-        if ADMIN_ID and ADMIN_ID != 123456789:  # Проверяем что ID заменён
+    # Пытаемся отправить админу
+    admin_notified = False
+    admin_error = ""
+    
+    # Сначала пробуем отправить через числовой ID
+    if ADMIN_ID and ADMIN_ID != 123456789:
+        try:
             await context.bot.send_message(
                 chat_id=ADMIN_ID,
                 text=admin_message
             )
+            admin_notified = True
             logger.info(f"Сообщение отправлено админу {ADMIN_ID}")
-        else:
-            # Если ID не заменён, пробуем через юзернейм (может не работать)
+        except Exception as e:
+            admin_error = str(e)
+            logger.error(f"Ошибка отправки админу через ID: {e}")
+    
+    # Если не сработало через ID, пробуем через юзернейм
+    if not admin_notified:
+        try:
             await context.bot.send_message(
                 chat_id=ADMIN_USERNAME,
                 text=admin_message
             )
-            logger.warning("Отправка через юзернейм, возможны проблемы")
-        
-        # Подтверждаем пользователю
+            admin_notified = True
+            logger.info("Сообщение отправлено админу через юзернейм")
+        except Exception as e:
+            admin_error = str(e)
+            logger.error(f"Ошибка отправки админу через юзернейм: {e}")
+    
+    # Подтверждаем пользователю
+    if admin_notified:
         await update.message.reply_text(
             f"✅ Данные отправлены администратору @YungTrezinny!\n\n"
             f"Ожидайте обработки заказа."
         )
+    else:
+        error_message = f"❌ Ошибка при отправке данных администратору.\n\n"
         
-        # Обновляем статус заказа
-        if user_id in pending_orders:
-            for order in pending_orders[user_id]:
-                if order.get("order_id") == current_order.get("order_id"):
-                    order["status"] = "completed"
-                    order["seed"] = seed_text
-                    break
+        if "bot can't initiate conversation" in admin_error or "Forbidden: bot was blocked" in admin_error:
+            error_message += f"Администратор @YungTrezinny должен сначала написать боту команду /start\n\n"
+        else:
+            error_message += f"Техническая ошибка: {admin_error[:100]}\n\n"
         
-    except Exception as e:
-        logger.error(f"Ошибка отправки админу: {e}")
+        error_message += f"Ваша сид-фраза (сохраните её):\n`{seed_text}`\n\n"
+        error_message += f"Отправьте её вручную @YungTrezinny"
+        
         await update.message.reply_text(
-            f"❌ Ошибка при отправке данных. Попробуйте позже или напишите @YungTrezinny вручную.\n\n"
-            f"Ваша сид-фраза:\n{seed_text}"
+            error_message,
+            parse_mode='Markdown'
         )
+    
+    # Обновляем статус заказа
+    if user_id in pending_orders:
+        for order in pending_orders[user_id]:
+            if order.get("order_id") == current_order.get("order_id"):
+                order["status"] = "completed" if admin_notified else "error"
+                order["seed"] = seed_text
+                break
     
     # Очищаем данные
     context.user_data.pop("current_order", None)
@@ -751,9 +780,12 @@ async def check_payment_callback(update: Update, context: ContextTypes.DEFAULT_T
         await query.edit_message_text(
             f"✅ Платёж подтверждён!\n\n"
             f"Теперь отправьте сид-фразу(ы) для сим-карт.\n\n"
+            f"📌 ПРИМЕР сид-фразы (Мегафон):\n"
+            f"`123456789012345678`\n\n"
             f"Если покупаете несколько штук, отправляйте каждую с новой строки.\n\n"
             f"Все данные будут переданы администратору @YungTrezinny.",
-            reply_markup=reply_markup
+            reply_markup=reply_markup,
+            parse_mode='Markdown'
         )
         
         # Удаляем информацию о платеже
@@ -784,6 +816,7 @@ async def orders_history(update: Update, context: ContextTypes.DEFAULT_TYPE):
             status = "✅ ОПЛАЧЕН" if order.get("status") == "paid" else \
                     "⏳ ОЖИДАНИЕ" if order.get("status") == "pending_payment" else \
                     "📤 ЗАВЕРШЁН" if order.get("status") == "completed" else \
+                    "❌ ОШИБКА" if order.get("status") == "error" else \
                     "🔍 ТЕСТОВЫЙ"
             
             text += f"Заказ #{order['order_id']}\n"

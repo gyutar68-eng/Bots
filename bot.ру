@@ -866,6 +866,13 @@ async def open_case(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     user_id = query.from_user.id
     
+# ============================================
+# ОТКРЫТИЕ КЕЙСА (ИСПРАВЛЕННАЯ)
+# ============================================
+async def open_case(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    user_id = query.from_user.id
+    
     if user_id in banned_users:
         await query.answer("⛔ Вы забанены!", show_alert=True)
         return
@@ -890,6 +897,16 @@ async def open_case(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
                 return
     
+    # ИНИЦИАЛИЗИРУЕМ СТАТИСТИКУ ПОЛЬЗОВАТЕЛЯ ЕСЛИ НУЖНО
+    if user_id not in user_stats:
+        user_stats[user_id] = {
+            'spent': 0,
+            'opened_cases': 0,
+            'won': 0,
+            'nickname': query.from_user.first_name,
+            'join_date': datetime.now().isoformat()
+        }
+    
     if case['price'] > 0:
         if user_balances.get(user_id, 0) < case['price']:
             await query.answer("❌ Недостаточно средств! Пополни баланс.", show_alert=True)
@@ -905,8 +922,6 @@ async def open_case(update: Update, context: ContextTypes.DEFAULT_TYPE):
             'date': datetime.now().isoformat()
         })
         
-        if user_id not in user_stats:
-            user_stats[user_id] = {'spent': 0, 'opened_cases': 0, 'won': 0, 'nickname': '', 'join_date': datetime.now().isoformat()}
         user_stats[user_id]['spent'] += case['price']
         user_stats[user_id]['opened_cases'] += 1
     
@@ -945,6 +960,7 @@ async def open_case(update: Update, context: ContextTypes.DEFAULT_TYPE):
             win_amount = item['amount']
             break
     
+    # НАЧИСЛЯЕМ ВЫИГРЫШ
     user_balances[user_id] = user_balances.get(user_id, 0) + win_amount
     user_stats[user_id]['won'] += win_amount
     

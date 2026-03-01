@@ -33,6 +33,7 @@ WAITING_FOR_PROMO_NAME = 11
 WAITING_FOR_PROMO_AMOUNT = 12
 WAITING_FOR_PROMO_USES = 13
 WAITING_FOR_CUSTOM_DEPOSIT = 14
+WAITING_FOR_ADMIN_STATS = 15
 
 # Токен и канал из переменных окружения
 TOKEN = os.getenv("BOT_TOKEN")
@@ -2905,7 +2906,7 @@ async def check_payment_callback(update: Update, context: ContextTypes.DEFAULT_T
         await query.answer("⏳ Платёж не найден или не оплачен", show_alert=True)
 
 # ============================================
-# АДМИН-ПАНЕЛЬ
+# АДМИН-ПАНЕЛЬ (ИСПРАВЛЕННАЯ)
 # ============================================
 async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -2943,13 +2944,16 @@ async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("⛔ Забанить пользователя", callback_data="admin_ban")],
         [InlineKeyboardButton("✅ Разбанить пользователя", callback_data="admin_unban")],
         [InlineKeyboardButton("🎁 Управление промокодами", callback_data="admin_promos")],
+        [InlineKeyboardButton("📊 Полная статистика", callback_data="admin_stats")],
+        [InlineKeyboardButton("💬 Активные чаты", callback_data="admin_chats")],
+        [InlineKeyboardButton("📦 Товары на модерации", callback_data="admin_moderate")],
         [InlineKeyboardButton("◀️ Назад", callback_data="profile_menu")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     await query.edit_message_text(text, reply_markup=reply_markup, parse_mode='Markdown')
 
-async def admin_users(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def admin_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     user_id = query.from_user.id
     
@@ -2959,26 +2963,40 @@ async def admin_users(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await query.answer()
     
-    text = "👥 **СПИСОК ПОЛЬЗОВАТЕЛЕЙ:**\n\n"
-    keyboard = []
+    # Подробная статистика
+    text = "📊 **ПОЛНАЯ СТАТИСТИКА**\n\n"
     
-    for uid, stats in list(user_stats.items())[:20]:
-        balance = user_balances.get(uid, 0)
-        ban_status = "⛔" if uid in banned_users else "✅"
-        nickname = stats.get('nickname', f"User_{uid}")
-        text += f"{ban_status} {nickname} (ID:{uid}): {balance}$\n"
-        
-        keyboard.append([InlineKeyboardButton(
-            f"{nickname}",
-            callback_data=f"admin_view_{uid}"
-        )])
+    # Пользователи
+    text += f"**Пользователи:**\n"
+    text += f"• Всего: {len(user_stats)}\n"
+    text += f"• Забанено: {len(banned_users)}\n"
+    text += f"• Активных сегодня: {sum(1 for uid in user_stats if user_stats[uid].get('last_active', '').startswith(datetime.now().strftime('%Y-%m-%d')))}\n\n"
     
-    keyboard.append([InlineKeyboardButton("◀️ Назад", callback_data="admin_panel")])
+    # Финансы
+    text += f"**Финансы:**\n"
+    text += f"• Общий баланс: {sum(user_balances.values())}$\n"
+    text += f"• Всего потрачено: {total_spent}$\n"
+    text += f"• Выиграно в кейсах: {sum(s['won'] for s in user_stats.values())}$\n"
+    text += f"• Прибыль платформы: {total_spent * PLATFORM_COMMISSION}$\n\n"
+    
+    # Кейсы
+    total_cases = sum(s['opened_cases'] for s in user_stats.values())
+    text += f"**Кейсы:**\n"
+    text += f"• Всего открыто: {total_cases}\n"
+    text += f"• Бесплатных: {sum(1 for t in transactions if t['type'] == 'case_purchase' and t.get('case') == '🎁 Бесплатный кейс')}\n"
+    text += f"• Платных: {sum(1 for t in transactions if t['type'] == 'case_purchase' and t.get('case') != '🎁 Бесплатный кейс')}\n\n"
+    
+    # Маркетплейс
+    text += f"**Маркетплейс:**\n"
+    text += f"• Товаров на витрине: {len(market_items)}\n"
+    text += f"• Продано всего: {sum(1 for t in transactions if t['type'] == 'market_purchase')}\n"
+    
+    keyboard = [[InlineKeyboardButton("◀️ Назад", callback_data="admin_panel")]]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     await query.edit_message_text(text, reply_markup=reply_markup, parse_mode='Markdown')
 
-async def admin_ban(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def admin_chats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     user_id = query.from_user.id
     
@@ -2988,111 +3006,42 @@ async def admin_ban(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await query.answer()
     
-    keyboard = [[InlineKeyboardButton("❌ Отмена", callback_data="admin_panel")]]
-    reply_markup = InlineKeyboardMarkup(keyboard)
+    active_chats = [uid for uid, chat in support_chats.items() if chat.get('active', False)]
     
-    await query.edit_message_text(
-        "⛔ Введите ID пользователя и причину бана через пробел\n"
-        "Пример: `123456789 Мошенничество`",
-        reply_markup=reply_markup,
-        parse_mode='Markdown'
-    )
-    
-    return WAITING_FOR_BAN_REASON
-
-async def process_ban(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    
-    if user_id != ADMIN_ID:
-        await update.message.reply_text("⛔ Доступ запрещён!")
-        return ConversationHandler.END
-    
-    try:
-        parts = update.message.text.strip().split(' ', 1)
-        target_id = int(parts[0])
-        reason = parts[1] if len(parts) > 1 else "Без причины"
-        
-        banned_users.add(target_id)
-        
-        try:
-            await context.bot.send_message(
-                chat_id=target_id,
-                text=f"⛔ Вы были забанены!\nПричина: {reason}"
-            )
-        except:
-            pass
-        
-        await update.message.reply_text(
-            f"✅ Пользователь {target_id} забанен.\nПричина: {reason}"
-        )
-        
-    except Exception as e:
-        await update.message.reply_text(f"❌ Ошибка: {e}")
-    
-    fake_query = type('obj', (object,), {
-        'from_user': type('obj', (object,), {'id': user_id}),
-        'message': update.message,
-        'answer': lambda: None
-    })
-    await admin_panel(Update(update.update_id, callback_query=fake_query), context)
-    
-    return ConversationHandler.END
-
-async def admin_unban(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    user_id = query.from_user.id
-    
-    if user_id != ADMIN_ID:
-        await query.answer("⛔ Доступ запрещён!", show_alert=True)
-        return
-    
-    await query.answer()
-    
-    text = "👥 **ЗАБАНЕННЫЕ ПОЛЬЗОВАТЕЛИ:**\n\n"
-    keyboard = []
-    
-    for uid in banned_users:
-        if uid in user_stats:
-            nickname = user_stats[uid].get('nickname', f"User_{uid}")
-        else:
-            nickname = f"User_{uid}"
-        text += f"• {nickname} (ID:{uid})\n"
-        keyboard.append([InlineKeyboardButton(
-            f"✅ Разбанить {nickname}",
-            callback_data=f"unban_{uid}"
-        )])
-    
-    keyboard.append([InlineKeyboardButton("◀️ Назад", callback_data="admin_panel")])
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    await query.edit_message_text(text, reply_markup=reply_markup, parse_mode='Markdown')
-
-async def process_unban(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    user_id = query.from_user.id
-    
-    if user_id != ADMIN_ID:
-        await query.answer("⛔ Доступ запрещён!", show_alert=True)
-        return
-    
-    target_id = int(query.data.replace("unban_", ""))
-    
-    if target_id in banned_users:
-        banned_users.remove(target_id)
-        
-        try:
-            await context.bot.send_message(
-                chat_id=target_id,
-                text="✅ Вы были разбанены!"
-            )
-        except:
-            pass
-        
-        await query.answer(f"✅ Пользователь {target_id} разбанен", show_alert=True)
+    if not active_chats:
+        text = "💬 **Нет активных чатов**"
     else:
-        await query.answer("❌ Пользователь не в бане", show_alert=True)
+        text = "💬 **АКТИВНЫЕ ЧАТЫ:**\n\n"
+        for uid in active_chats[:10]:
+            user_info = user_stats.get(uid, {})
+            nickname = user_info.get('nickname', f"User_{uid}")
+            started = support_chats[uid].get('started', '')[:16]
+            text += f"• {nickname} (ID: {uid}) — с {started}\n"
+            keyboard.append([InlineKeyboardButton(f"💬 Чат с {nickname}", callback_data=f"admin_view_{uid}")])
     
-    await admin_unban(update, context)
+    keyboard.append([InlineKeyboardButton("◀️ Назад", callback_data="admin_panel")])
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await query.edit_message_text(text, reply_markup=reply_markup, parse_mode='Markdown')
+
+async def admin_moderate(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    user_id = query.from_user.id
+    
+    if user_id != ADMIN_ID:
+        await query.answer("⛔ Доступ запрещён!", show_alert=True)
+        return
+    
+    await query.answer()
+    
+    # Здесь можно добавить логику модерации товаров
+    text = "📦 **ТОВАРЫ НА МОДЕРАЦИИ**\n\n"
+    text += "Функция в разработке. Скоро здесь можно будет модерировать товары перед публикацией."
+    
+    keyboard = [[InlineKeyboardButton("◀️ Назад", callback_data="admin_panel")]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await query.edit_message_text(text, reply_markup=reply_markup, parse_mode='Markdown')
 
 # ============================================
 # ФУНКЦИИ ПРОВЕРКИ ПОДПИСКИ И FAQ
@@ -3114,7 +3063,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             'opened_cases': 0,
             'won': 0,
             'nickname': user.first_name,
-            'join_date': datetime.now().isoformat()
+            'join_date': datetime.now().isoformat(),
+            'last_active': datetime.now().isoformat()
         }
     
     if user_id not in user_balances:
@@ -3668,6 +3618,9 @@ def main():
     app.add_handler(CallbackQueryHandler(admin_users, pattern="^admin_users$"))
     app.add_handler(CallbackQueryHandler(admin_unban, pattern="^admin_unban$"))
     app.add_handler(CallbackQueryHandler(process_unban, pattern="^unban_[0-9]+$"))
+    app.add_handler(CallbackQueryHandler(admin_stats, pattern="^admin_stats$"))
+    app.add_handler(CallbackQueryHandler(admin_chats, pattern="^admin_chats$"))
+    app.add_handler(CallbackQueryHandler(admin_moderate, pattern="^admin_moderate$"))
     
     app.add_handler(CallbackQueryHandler(clicker_menu, pattern="^clicker_menu$"))
     

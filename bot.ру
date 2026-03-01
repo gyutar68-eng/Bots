@@ -1859,6 +1859,16 @@ async def faq_reminder_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     remaining = total - read_count
     await query.answer(f"❌ Осталось прочитать {remaining} разделов!", show_alert=True)
 
+async def back_to_faq(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    await show_faq(update, context)
+
+async def back_to_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    await show_main_menu(update, context)
+
 async def go_to_shop(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await show_main_menu(update, context)
 
@@ -1895,6 +1905,125 @@ async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(text, reply_markup=reply_markup, parse_mode='Markdown')
 
 # ============================================
+# ЗАГЛУШКИ ДЛЯ ОТСУТСТВУЮЩИХ ФУНКЦИЙ
+# ============================================
+async def catalog(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    await query.edit_message_text(
+        "🛍 **Каталог товаров**\n\nВ разработке...",
+        reply_markup=InlineKeyboardMarkup([[
+            InlineKeyboardButton("◀️ Назад", callback_data="back_to_menu")
+        ]])
+    )
+
+async def marketplace(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    await query.edit_message_text(
+        "🏪 **Торговая площадка**\n\nВ разработке...",
+        reply_markup=InlineKeyboardMarkup([[
+            InlineKeyboardButton("◀️ Назад", callback_data="back_to_menu")
+        ]])
+    )
+
+async def orders_history(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    await query.edit_message_text(
+        "📦 **История заказов**\n\nУ вас пока нет заказов.",
+        reply_markup=InlineKeyboardMarkup([[
+            InlineKeyboardButton("◀️ Назад", callback_data="back_to_menu")
+        ]])
+    )
+
+async def support_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    await query.edit_message_text(
+        "💬 **Чат с поддержкой**\n\nНапишите @YungTrezinny",
+        reply_markup=InlineKeyboardMarkup([[
+            InlineKeyboardButton("◀️ Назад", callback_data="back_to_menu")
+        ]])
+    )
+
+async def about(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    await query.edit_message_text(
+        "ℹ️ **О нас**\n\nЛучший магазин цифровых товаров!",
+        reply_markup=InlineKeyboardMarkup([[
+            InlineKeyboardButton("◀️ Назад", callback_data="back_to_menu")
+        ]])
+    )
+
+async def contacts(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    await query.edit_message_text(
+        "📞 **Контакты**\n\n@YungTrezinny",
+        reply_markup=InlineKeyboardMarkup([[
+            InlineKeyboardButton("◀️ Назад", callback_data="back_to_menu")
+        ]])
+    )
+
+async def deposit_balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    await query.edit_message_text(
+        "💰 **Пополнение баланса**\n\nВ разработке...",
+        reply_markup=InlineKeyboardMarkup([[
+            InlineKeyboardButton("◀️ Назад", callback_data="profile_menu")
+        ]])
+    )
+
+async def activate_promo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    await query.edit_message_text(
+        "🎁 **Активация промокода**\n\nВведите код:",
+        reply_markup=InlineKeyboardMarkup([[
+            InlineKeyboardButton("❌ Отмена", callback_data="profile_menu")
+        ]])
+    )
+    return WAITING_FOR_PROMO_NAME
+
+async def process_promo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    promo_name = update.message.text.strip().upper()
+    
+    if promo_name in promo_codes:
+        promo = promo_codes[promo_name]
+        
+        if promo['uses_left'] <= 0:
+            await update.message.reply_text("❌ Промокод уже использован!")
+        elif user_id in promo['activated_by']:
+            await update.message.reply_text("❌ Вы уже активировали этот промокод!")
+        else:
+            promo['uses_left'] -= 1
+            promo['activated_by'].append(user_id)
+            
+            if user_id not in user_balances:
+                user_balances[user_id] = 0
+            user_balances[user_id] += promo['amount']
+            
+            await update.message.reply_text(
+                f"✅ Промокод активирован!\n"
+                f"Начислено: {promo['amount']}$\n"
+                f"Текущий баланс: {user_balances[user_id]}$"
+            )
+    else:
+        await update.message.reply_text("❌ Промокод не найден!")
+    
+    fake_query = type('obj', (object,), {
+        'from_user': type('obj', (object,), {'id': user_id}),
+        'message': update.message,
+        'answer': lambda: None
+    })
+    await profile_menu(Update(update.update_id, callback_query=fake_query), context)
+    return ConversationHandler.END
+
+# ============================================
 # MAIN
 # ============================================
 def main():
@@ -1918,20 +2047,6 @@ def main():
         fallbacks=[CommandHandler("cancel", cancel_input)]
     )
     
-    # ConversationHandler для ввода сид-фразы
-    sim_seed_handler = ConversationHandler(
-        entry_points=[
-            CallbackQueryHandler(check_payment_callback, pattern="^check_payment_[0-9]+$")
-        ],
-        states={
-            WAITING_FOR_SIM_SEED: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_sim_seed),
-                CallbackQueryHandler(cancel_input, pattern="^cancel_input$")
-            ]
-        },
-        fallbacks=[CommandHandler("cancel", cancel_input)]
-    )
-    
     # ConversationHandler для промокодов (пользователь)
     promo_user_handler = ConversationHandler(
         entry_points=[CallbackQueryHandler(activate_promo, pattern="^activate_promo$")],
@@ -1943,7 +2058,6 @@ def main():
     
     app.add_handler(nickname_handler)
     app.add_handler(captcha_handler)
-    app.add_handler(sim_seed_handler)
     app.add_handler(promo_user_handler)
     
     # Команды
@@ -1962,8 +2076,6 @@ def main():
     # Профиль и баланс
     app.add_handler(CallbackQueryHandler(profile_menu, pattern="^profile_menu$"))
     app.add_handler(CallbackQueryHandler(deposit_balance, pattern="^deposit_balance$"))
-    app.add_handler(CallbackQueryHandler(deposit_amount, pattern="^deposit_[0-9.]+$"))
-    app.add_handler(CallbackQueryHandler(check_deposit_callback, pattern="^check_deposit_[0-9]+$"))
     
     # Кейсы и подарки
     app.add_handler(CallbackQueryHandler(cases_menu, pattern="^cases_menu$"))
@@ -1973,34 +2085,24 @@ def main():
     app.add_handler(CallbackQueryHandler(case_category_games, pattern="^case_cat_games$"))
     app.add_handler(CallbackQueryHandler(case_info, pattern="^case_(free|bomzh|shkolnik|student|fiftyfifty|izumrud|terraria)$"))
     app.add_handler(CallbackQueryHandler(open_case_balance, pattern="^open_balance_(free|bomzh|shkolnik|student|fiftyfifty|izumrud|terraria)$"))
-    app.add_handler(CallbackQueryHandler(open_case_crypto, pattern="^open_crypto_(free|bomzh|shkolnik|student|fiftyfifty|izumrud|terraria)$"))
-    app.add_handler(CallbackQueryHandler(check_case_payment_callback, pattern="^check_case_payment_[0-9]+$"))
     
     # Подарки
     app.add_handler(CallbackQueryHandler(gifts_menu, pattern="^gifts_menu$"))
     app.add_handler(CallbackQueryHandler(gift_info, pattern="^gift_(mini|xmas|hyper)$"))
     app.add_handler(CallbackQueryHandler(buy_gift_balance, pattern="^buy_gift_balance_(mini|xmas|hyper)$"))
-    app.add_handler(CallbackQueryHandler(buy_gift_crypto, pattern="^buy_gift_crypto_(mini|xmas|hyper)$"))
-    app.add_handler(CallbackQueryHandler(check_gift_payment_callback, pattern="^check_gift_payment_[0-9]+$"))
     
     # Кликер
     app.add_handler(CallbackQueryHandler(clicker_menu, pattern="^clicker_menu$"))
     
     # Каталог и покупки
     app.add_handler(CallbackQueryHandler(catalog, pattern="^catalog$"))
-    app.add_handler(CallbackQueryHandler(buy_sim_menu, pattern="^buy_sim_menu$"))
-    app.add_handler(CallbackQueryHandler(buy_sim, pattern="^buy_sim_[0-9]+$"))
-    app.add_handler(CallbackQueryHandler(buy_test, pattern="^buy_test$"))
+    app.add_handler(CallbackQueryHandler(marketplace, pattern="^marketplace$"))
     
     # Заказы, поддержка, инфо
     app.add_handler(CallbackQueryHandler(orders_history, pattern="^orders$"))
     app.add_handler(CallbackQueryHandler(support_chat, pattern="^support_chat$"))
-    app.add_handler(CallbackQueryHandler(close_support, pattern="^close_support$"))
     app.add_handler(CallbackQueryHandler(about, pattern="^about$"))
     app.add_handler(CallbackQueryHandler(contacts, pattern="^contacts$"))
-    
-    # Обработчик текстовых сообщений
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_sim_seed))
     
     logger.info("🚀 Бот запускается...")
     app.run_polling()

@@ -1742,7 +1742,7 @@ async def check_case_payment_callback(update: Update, context: ContextTypes.DEFA
         await query.answer("⏳ Платёж не найден или не оплачен", show_alert=True)
 
 # ============================================
-# ПРОФИЛЬ ПОЛЬЗОВАТЕЛЯ
+# ПРОФИЛЬ ПОЛЬЗОВАТЕЛЯ (ИСПРАВЛЕННАЯ)
 # ============================================
 async def profile_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -1751,7 +1751,7 @@ async def profile_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = query.from_user.id
     user = query.from_user
     
-    # Гарантированная инициализация пользователя
+    # ГАРАНТИРОВАННАЯ ИНИЦИАЛИЗАЦИЯ ДЛЯ ЛЮБОГО ПОЛЬЗОВАТЕЛЯ
     if user_id not in user_stats:
         user_stats[user_id] = {
             'spent': 0,
@@ -1798,6 +1798,51 @@ async def profile_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     await query.edit_message_text(text, reply_markup=reply_markup, parse_mode='Markdown')
+
+async def change_nickname(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    keyboard = [[InlineKeyboardButton("❌ Отмена", callback_data="profile_menu")]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await query.edit_message_text(
+        "✏️ **Введите новый никнейм** (до 20 символов):",
+        reply_markup=reply_markup,
+        parse_mode='Markdown'
+    )
+    
+    return WAITING_FOR_NICKNAME
+
+async def set_nickname(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    new_nick = update.message.text.strip()
+    
+    if len(new_nick) > 20:
+        await update.message.reply_text(
+            "❌ Никнейм слишком длинный! Максимум 20 символов.\n"
+            "Попробуйте снова:"
+        )
+        return WAITING_FOR_NICKNAME
+    
+    if user_id not in user_stats:
+        user_stats[user_id] = {'spent': 0, 'opened_cases': 0, 'won': 0, 'nickname': '', 'join_date': datetime.now().isoformat()}
+    
+    user_stats[user_id]['nickname'] = new_nick
+    
+    await update.message.reply_text(
+        f"✅ Никнейм успешно изменён на **{new_nick}**!",
+        parse_mode='Markdown'
+    )
+    
+    fake_query = type('obj', (object,), {
+        'from_user': type('obj', (object,), {'id': user_id}),
+        'message': update.message,
+        'answer': lambda: None
+    })
+    await profile_menu(Update(update.update_id, callback_query=fake_query), context)
+    
+    return ConversationHandler.END
 
 # ============================================
 # КАТАЛОГ И ПОКУПКИ

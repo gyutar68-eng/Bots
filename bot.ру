@@ -41,6 +41,7 @@ CHANNEL_URL = os.getenv("CHANNEL_URL", f"https://t.me/{CHANNEL_ID.replace('@', '
 CP_TOKEN = os.getenv("CP_TOKEN")
 ADMIN_USERNAME = "@YungTrezinny"
 ADMIN_ID = 8268837047
+PROMO_CHANNEL = "@SlogsPromo"
 
 # Комиссия платформы (15%)
 PLATFORM_COMMISSION = 0.15
@@ -224,144 +225,408 @@ CASES = {
 }
 
 # ============================================
-# РАЗДЕЛЫ FAQ
+# РАЗДЕЛЫ FAQ (РАСШИРЕННЫЕ)
 # ============================================
 FAQ_SECTIONS = [
     {
         "id": 1, 
         "name": "📌 О сервисе", 
-        "content": """ℹ️ О СЕРВИСЕ
+        "content": """ℹ️ **О СЕРВИСЕ**
 
 Мы - профессиональный маркетплейс цифровых товаров. Работаем с 2024 года.
 
-🔹 Наша миссия: предоставлять безопасную площадку для продажи цифровых товаров
-🔹 Более 500 довольных клиентов
-🔹 24/7 поддержка
-🔹 Мгновенная автоматическая обработка заказов
+🔹 **Наша миссия:** предоставлять безопасную площадку для продажи цифровых товаров
+🔹 **Клиентов:** более 500 довольных покупателей
+🔹 **Поддержка:** 24/7 (обычно отвечаем за 5-15 минут)
+🔹 **Выдача товаров:** мгновенная автоматическая
 
-✅ Преимущества:
-• Все товары проходят модерацию
+✅ **Преимущества:**
+• Все товары проходят модерацию перед публикацией
 • Гарантия безопасности сделок
-• Комиссия платформы 15%
-• Анонимность и безопасность
+• Комиссия платформы всего 15%
+• Полная анонимность и безопасность
+• Два способа оплаты: баланс или криптовалюта
+
+📢 **Канал с новостями:** {channel_url}
+🎁 **Промокоды:** @SlogsPromo
 
 По всем вопросам: @YungTrezinny"""
     },
     {
         "id": 2, 
-        "name": "🖱 Что такое кликер", 
-        "content": """🖱 КЛИКЕР - ЗАРАБАТЫВАЙ БЕСПЛАТНО!
+        "name": "🖱 Кликер", 
+        "content": """🖱 **КЛИКЕР - ЗАРАБАТЫВАЙ БЕСПЛАТНО!**
 
 Это уникальная возможность получить подпись сим-карты абсолютно бесплатно!
 
-🔹 Как это работает:
-• Каждый день в 13:00 МСК счётчик обновляется
-• Нужно нажать 54999 раз
+🔹 **Как это работает:**
+• Каждый день в 13:00 МСК счётчик кликов обновляется
+• Нужно нажать **54999 раз**
 • Защита от автокликеров (капча каждые 500 кликов)
 • После достижения цели - можно забрать подпись
 
-🔹 Правила:
-• Недельный кулдаун после получения
+🔹 **Правила:**
+• Недельный кулдаун после получения подписи
 • Честная игра без ботов
-• Сброс каждый день в 13:00
+• Сброс каждый день в 13:00 МСК
 
-🔥 Попробуй свои силы в разделе "Кликер"!"""
+🔹 **Стратегия:**
+• Кликайте каждый день, чтобы накопить клики
+• 54999 кликов = бесплатная подпись (экономия 4$)
+• Максимальный прогресс можно посмотреть в меню кликера
+
+🔥 **Попробуй свои силы прямо сейчас!**"""
     },
     {
         "id": 3, 
         "name": "🎲 Кейсы", 
-        "content": """🎲 КЕЙСЫ - ИСПЫТАЙ УДАЧУ!
+        "content": """🎲 **КЕЙСЫ - ИСПЫТАЙ УДАЧУ!**
 
 Покупай кейсы и выигрывай реальные деньги на баланс!
 
-🔹 Доступные кейсы:
-• 💸 Бомж-кейс (1$) - шанс до 2$
-• 📚 Школьник-кейс (2.5$) - шанс до 5$
-• 👑 Мажорик-кейс (5$) - шанс до 10$
-• ⚖️ Кейс 50/50 (2$) - реальные шансы 50/50!
-• 🎁 Бесплатный кейс (раз в 3 дня)
+🔹 **Доступные кейсы:**
+• 💸 **Бомж-кейс (1$)** - шанс до 2$
+  - 0.25$ (40%), 0.4$ (20%), 0.6$ (15%), 0.8$ (10%)
+  - 1.0$ (7%), 1.5$ (5%), 2.0$ (3%)
 
-🔹 Особенности:
+• 📚 **Школьник-кейс (2.5$)** - шанс до 5$
+  - 0.5$ (35%), 0.75$ (30%), 1.5$ (15%)
+  - 2.0$ (10%), 3.0$ (5%), 5.0$ (5%)
+
+• 👑 **Мажорик-кейс (5$)** - шанс до 10$
+  - 1.0$ (40%), 2.5$ (35%), 3.55$ (25%)
+  - 6.0$ (7%), 10.0$ (3%)
+
+• ⚖️ **Кейс 50/50 (2$)** - рискни и удвой!
+  - 0.75$ (50%) или 7.5$ (50%) - честные шансы!
+
+• 🎁 **Бесплатный кейс** - раз в 3 дня
+  - 0.1$ (95%), 0.5$ (4%), 1.0$ (1%)
+
+🔹 **Особенности:**
 • Выигрыш мгновенно зачисляется на баланс
 • Можно тратить на любые товары
-• Реальные шансы указаны в описании
-• НОВИНКА: Кейс 50/50 с удвоением!
+• Шансы указаны честно
 
-🎰 Испытай удачу прямо сейчас!"""
+🎰 **Испытай удачу прямо сейчас!**"""
     },
     {
         "id": 4, 
-        "name": "💰 Баланс и пополнение", 
-        "content": """💰 БАЛАНС И ПОПОЛНЕНИЕ
+        "name": "💰 Баланс", 
+        "content": """💰 **БАЛАНС И ПОПОЛНЕНИЕ**
 
-Внутренняя валюта бота - USD (доллары)
+Внутренняя валюта бота - **USD (доллары)**
 
-🔹 Как пополнить:
-• Через Crypto Bot (USDT) - любая сумма от 0.5$ до 100$
-• Выиграть в кейсах
-• Ввести промокод
-• Получить от администратора
+🔹 **Как пополнить баланс:**
+1. Через **Crypto Bot (USDT)** - любая сумма от 0.5$ до 100$
+2. Выиграть в **кейсах**
+3. Активировать **промокод**
+4. Получить от **администратора**
 
-🔹 На что тратить:
+🔹 **Курс конвертации:**
+• 1 USDT ≈ 90 RUB (обновляется автоматически с CoinGecko)
+• Комиссия за пополнение: **0%**
+
+🔹 **На что тратить баланс:**
 • Покупка кейсов
 • Товары на маркетплейсе
-• Подписи сим-карт
+• Подписи сим-карт (4$/шт)
 
-🔹 Вывод средств:
+🔹 **Вывод средств:**
 • Напишите администратору @YungTrezinny
 • Минимальная сумма: 10$
 • Выплаты ежедневно
+• Способ вывода: USDT на ваш кошелек
 
-🎁 Промокоды появляются в канале!
-
-💳 Пополнить баланс можно в разделе "Профиль"!"""
+💳 **Пополнить баланс можно в разделе "Профиль"!**"""
     },
     {
         "id": 5, 
-        "name": "🏪 Торговая площадка", 
-        "content": """🏪 ТОРГОВАЯ ПЛОЩАДКА
-
-P2P маркетплейс, где пользователи продают друг другу любые цифровые товары!
-
-🔹 Как продать:
-1. Нажми "Продать товар"
-2. Опиши товар
-3. Оплати комиссию 15%
-4. Товар появляется на витрине
-
-🔹 Как купить:
-• Просматривай товары
-• Оплачивай через баланс или криптовалюту
-• Получай данные от продавца
-
-🔹 Гарантии:
-• Все сделки через бота
-• Деньги замораживаются
-• Разрешение споров администратором"""
-    },
-    {
-        "id": 6, 
         "name": "🎁 Промокоды", 
-        "content": """🎁 ПРОМОКОДЫ
+        "content": """🎁 **ПРОМОКОДЫ**
 
 Активируй промокоды и получай бонусы на баланс!
 
-🔹 Где брать промокоды:
+🔹 **Где брать промокоды:**
 • В нашем Telegram-канале {channel_url}
+• В канале с промокодами @SlogsPromo
 • От администратора @YungTrezinny
 • В конкурсах и розыгрышах
+• За активность в боте
 
-🔹 Как активировать:
-1. Нажми "Активировать промокод"
-2. Введи код
-3. Получи деньги на баланс!
+🔹 **Как активировать:**
+1. Зайди в раздел **"Профиль"**
+2. Нажми **"Активировать промокод"**
+3. Введи код (например: SUMMER2026)
+4. Получи деньги на баланс!
 
-🔹 Правила:
+🔹 **Правила:**
 • Один промокод можно использовать ограниченное число раз
-• Нельзя активировать дважды
-• Следи за новыми промокодами!
+• Нельзя активировать дважды с одного аккаунта
+• Следи за новыми промокодами каждый день!
 
-💎 Активируй промокод прямо сейчас в разделе "Профиль"!"""
+💎 **Активируй промокод прямо сейчас!**"""
+    },
+    {
+        "id": 6, 
+        "name": "🏪 Маркетплейс", 
+        "content": """🏪 **ТОРГОВАЯ ПЛОЩАДКА**
+
+P2P маркетплейс, где пользователи продают друг другу любые цифровые товары!
+
+🔹 **Что можно продавать:**
+• Аккаунты Steam, Epic Games, Origin
+• Brawl Stars, Clash of Clans, Clash Royale
+• Ключи активации игр и софта
+• Подписки на сервисы (Netflix, Spotify)
+• Криптовалюту (P2P обмен)
+• И многое другое!
+
+🔹 **Как продать товар:**
+1. Нажми **"Продать товар"** в меню маркетплейса
+2. Опиши товар (название, описание, цена)
+3. Оплати комиссию 15%
+4. Товар появляется на витрине
+
+🔹 **Как купить товар:**
+1. Просматривай товары в каталоге
+2. Выбери способ оплаты (баланс или крипта)
+3. Оплачивай через бота
+4. Получай данные от продавца
+
+🔹 **Гарантии безопасности:**
+• Все сделки проходят через бота
+• Деньги замораживаются до подтверждения
+• Разрешение споров администратором
+• Возврат при невыполнении обязательств
+
+🔥 **Начни продавать уже сегодня!**"""
+    },
+    {
+        "id": 7, 
+        "name": "📱 Подписи сим-карт", 
+        "content": """📱 **ПОДПИСИ СИМ-КАРТ**
+
+Готовые подписи для сим-карт российских операторов!
+
+🔹 **Доступные операторы:**
+• Мегафон
+• СберМобайл
+• Теле2
+• Билайн
+• Yota
+• МТС
+
+🔹 **Цены:**
+• 1 подпись - 4$
+• 3 подписи - 12$ (цена без скидки)
+• 5 подписей - 20$ (цена без скидки)
+
+🔹 **Как получить подпись:**
+1. Купить через **"Наш каталог"**
+2. Оплатить (баланс или крипта)
+3. Отправить сид-фразу боту
+4. Получить подпись от администратора
+
+🔹 **Бесплатный способ:**
+• Используй **Кликер** - нажми 54999 раз
+• Получи подпись абсолютно бесплатно!
+• Кулдаун 7 дней после получения
+
+🔹 **Что такое сид-фраза:**
+Это уникальный код для генерации подписи. 
+Пример: `123456789012345678`
+
+📌 **Покупай подписи в разделе "Каталог"!**"""
+    },
+    {
+        "id": 8, 
+        "name": "🛡 Гарантии", 
+        "content": """🛡 **ГАРАНТИИ И ВОЗВРАТ**
+
+Мы дорожим своей репутацией и предоставляем полные гарантии на все товары.
+
+🔹 **Наши обязательства:**
+✅ 100% возврат средств при нерабочих данных
+✅ Замена товара в течение 24 часов
+✅ Проверка каждого товара перед продажей
+✅ Поддержка после покупки 24/7
+
+🔹 **Условия возврата:**
+• Товар не соответствует описанию
+• Данные не работают
+• Технические проблемы с файлом
+• Двойная оплата
+• Мошенничество со стороны продавца
+
+🔹 **Процедура возврата:**
+1. Напишите в поддержку @YungTrezinny
+2. Укажите номер заказа
+3. Опишите проблему подробно
+4. Приложите скриншоты (если есть)
+5. Получите замену или возврат
+
+🔹 **Сроки:**
+• Рассмотрение: до 1 часа
+• Замена: моментально
+• Возврат: 24-48 часов
+
+🔹 **Для продавцов:**
+• Защита от недобросовестных покупателей
+• Быстрые выплаты после подтверждения
+• Разрешение споров администратором
+
+💎 **Работаем честно и прозрачно!**"""
+    },
+    {
+        "id": 9, 
+        "name": "🔒 Безопасность", 
+        "content": """🔒 **ПРАВИЛА БЕЗОПАСНОСТИ**
+
+Для вашей же безопасности просим соблюдать простые правила.
+
+⚠️ **ЗАПРЕЩЕНО:**
+❌ Передавать данные третьим лицам
+❌ Использовать в мошеннических целях
+❌ Пытаться взломать бота
+❌ Создавать несколько аккаунтов
+❌ Обходить комиссию платформы
+❌ Продавать запрещенные товары
+
+✅ **РЕКОМЕНДУЕТСЯ:**
+• Использовать отдельный пароль для покупок
+• Не хранить данные в открытом доступе
+• Сообщать о подозрительной активности
+• Делать резервные копии файлов
+• Проверять продавца перед покупкой
+
+🔐 **Меры безопасности:**
+• Все транзакции защищены шифрованием
+• Личные данные не хранятся на сервере
+• Анонимная оплата через криптовалюту
+• Шифрование всех файлов с товарами
+• Защита от DDoS атак
+
+🔹 **Что делать если:**
+• **Забыли данные** - обратитесь в поддержку
+• **Подозреваете взлом** - смените пароль
+• **Столкнулись с мошенником** - напишите админу
+• **Потеряли файл** - запросите повторно
+
+📞 **По любым вопросам: @YungTrezinny**"""
+    },
+    {
+        "id": 10, 
+        "name": "📊 Статистика", 
+        "content": """📊 **СТАТИСТИКА И ПРОФИЛЬ**
+
+В разделе **"Профиль"** вы можете отслеживать всю свою активность.
+
+🔹 **Что показывает профиль:**
+• **ID** - ваш уникальный идентификатор
+• **Никнейм** - как вас видят другие
+• **Баланс** - сколько денег на счету
+• **Статус** - активен или забанен
+
+🔹 **Статистика:**
+• **Открыто кейсов** - сколько раз рискнули
+• **Потрачено всего** - общая сумма покупок
+• **Выиграно всего** - сколько выиграли в кейсах
+• **Чистая прибыль** - выигрыш минус траты
+• **Дата регистрации** - когда присоединились
+
+🔹 **Как улучшить статистику:**
+• Чаще открывайте кейсы
+• Приглашайте друзей (скоро будет рефералка)
+• Следите за промокодами
+• Участвуйте в конкурсах
+
+🔹 **Смена никнейма:**
+1. Зайди в профиль
+2. Нажми "Сменить никнейм"
+3. Введи новое имя (до 20 символов)
+4. Готово!
+
+👤 **Проверь свою статистику прямо сейчас!**"""
+    },
+    {
+        "id": 11, 
+        "name": "💬 Поддержка", 
+        "content": """💬 **СЛУЖБА ПОДДЕРЖКИ**
+
+Мы всегда на связи и готовы помочь!
+
+🔹 **КОНТАКТЫ:**
+• Основной канал: {channel_url}
+• Промокоды: @SlogsPromo
+• Поддержка: @YungTrezinny
+• Время работы: 24/7 (без выходных)
+
+🔹 **ПО КАКИМ ВОПРОСАМ ОБРАЩАТЬСЯ:**
+• Проблемы с оплатой
+• Ошибки при получении файлов
+• Замена товара
+• Возврат средств
+• Споры по сделкам
+• Технические проблемы
+• Предложения по улучшению
+• Вопросы по кейсам
+• Проблемы с кликером
+• Активация промокодов
+
+🔹 **СРОКИ ОТВЕТА:**
+• Обычный вопрос: 5-15 минут
+• Техническая проблема: до 1 часа
+• Спор между пользователями: до 24 часов
+• Возврат средств: 24-48 часов
+• Сложные случаи: до 48 часов
+
+🔹 **КАК УСКОРИТЬ ОТВЕТ:**
+• Укажите номер заказа
+• Опишите проблему подробно
+• Приложите скриншоты
+• Не дублируйте сообщения
+• Пишите по одному вопросу
+
+🔹 **Чат с поддержкой:**
+1. Нажми "Чат с поддержкой" в меню
+2. Напиши сообщение
+3. Администратор ответит в этом же чате
+
+💬 **Мы ценим каждого клиента!**"""
+    },
+    {
+        "id": 12, 
+        "name": "📞 Контакты", 
+        "content": """📞 **КОНТАКТЫ И СОЦСЕТИ**
+
+Все способы связи с нами:
+
+🔹 **Telegram:**
+• Основной канал: {channel_url}
+• Промокоды: @SlogsPromo
+• Администратор: @YungTrezinny
+• Чат поддержки: в боте
+
+🔹 **Email:**
+• support@shoplogs24.ru
+• Для официальных запросов
+
+🔹 **Время работы:**
+• Поддержка: 24/7
+• Выплаты: ежедневно 10:00-22:00 МСК
+• Модерация товаров: круглосуточно
+
+🔹 **Реквизиты:**
+• Юридическая информация по запросу
+• Все сделки анонимны и безопасны
+
+🔹 **Сотрудничество:**
+• По вопросам рекламы: @YungTrezinny
+• Предложения по улучшению: туда же
+• Стать продавцом: через маркетплейс
+
+📢 **Подписывайся на канал, чтобы не пропускать новости и промокоды!**"""
     }
 ]
 
@@ -1036,7 +1301,7 @@ async def admin_promo_uses(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Код: {promo_name}\n"
         f"Сумма: {promo_amount}$\n"
         f"Использований: {uses}\n\n"
-        f"Теперь его можно публиковать в канале!",
+        f"Теперь его можно публиковать в канале @SlogsPromo!",
         reply_markup=InlineKeyboardMarkup([[
             InlineKeyboardButton("⚙️ В админку", callback_data="admin_panel")
         ]])
@@ -1207,7 +1472,6 @@ async def open_case_balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_stats[user_id]['spent'] += case['price']
         user_stats[user_id]['opened_cases'] += 1
     
-    # Анимация
     animation_frames = [
         "🎲 Открываем кейс... ░░░░░░░░░░",
         "⚙️ Открываем кейс... █░░░░░░░░░",
@@ -1501,12 +1765,12 @@ async def profile_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ban_status = "⛔ ЗАБАНЕН" if user_id in banned_users else "✅ Активен"
     
     text = (
-        f"👤 ПРОФИЛЬ ПОЛЬЗОВАТЕЛЯ\n\n"
-        f"🆔 ID: {user_id}\n"
-        f"📝 Никнейм: {nickname}\n"
-        f"💰 Баланс: {balance}$\n"
-        f"📊 Статус: {ban_status}\n\n"
-        f"📈 СТАТИСТИКА:\n"
+        f"👤 **ПРОФИЛЬ ПОЛЬЗОВАТЕЛЯ**\n\n"
+        f"🆔 **ID:** {user_id}\n"
+        f"📝 **Никнейм:** {nickname}\n"
+        f"💰 **Баланс:** {balance}$\n"
+        f"📊 **Статус:** {ban_status}\n\n"
+        f"📈 **СТАТИСТИКА:**\n"
         f"• Открыто кейсов: {stats['opened_cases']}\n"
         f"• Потрачено всего: {stats['spent']}$\n"
         f"• Выиграно всего: {stats['won']}$\n"
@@ -1527,7 +1791,7 @@ async def profile_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    await query.edit_message_text(text, reply_markup=reply_markup)
+    await query.edit_message_text(text, reply_markup=reply_markup, parse_mode='Markdown')
 
 async def change_nickname(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -1537,8 +1801,9 @@ async def change_nickname(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     await query.edit_message_text(
-        "✏️ Введите новый никнейм (до 20 символов):",
-        reply_markup=reply_markup
+        "✏️ **Введите новый никнейм** (до 20 символов):",
+        reply_markup=reply_markup,
+        parse_mode='Markdown'
     )
     
     return WAITING_FOR_NICKNAME
@@ -1560,7 +1825,8 @@ async def set_nickname(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_stats[user_id]['nickname'] = new_nick
     
     await update.message.reply_text(
-        f"✅ Никнейм успешно изменён на {new_nick}!"
+        f"✅ Никнейм успешно изменён на **{new_nick}**!",
+        parse_mode='Markdown'
     )
     
     fake_query = type('obj', (object,), {
@@ -1587,11 +1853,13 @@ async def catalog(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     await query.edit_message_text(
-        "🛍 Наш каталог\n\n"
+        "🛍 **НАШ КАТАЛОГ**\n\n"
         "Товары от администрации:\n\n"
-        "📱 Подписи сим-карт - 4$/шт\n"
-        "🧪 Тестовый товар - 0.1$ (проверить систему)",
-        reply_markup=reply_markup
+        "📱 **Подписи сим-карт** - 4$/шт\n"
+        "🧪 **Тестовый товар** - 0.1$ (проверить систему)\n\n"
+        "Все товары выдаются моментально после оплаты!",
+        reply_markup=reply_markup,
+        parse_mode='Markdown'
     )
 
 async def buy_sim_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1609,10 +1877,12 @@ async def buy_sim_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     await query.edit_message_text(
-        "📱 Выберите количество подписей:\n\n"
+        "📱 **ВЫБЕРИТЕ КОЛИЧЕСТВО**\n\n"
         "Цена: 4$ за штуку\n"
-        "Доступна оплата с баланса!",
-        reply_markup=reply_markup
+        "Доступна оплата с баланса или криптовалютой!\n\n"
+        "После оплаты нужно будет ввести сид-фразу(ы).",
+        reply_markup=reply_markup,
+        parse_mode='Markdown'
     )
 
 async def buy_sim(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1633,11 +1903,12 @@ async def buy_sim(update: Update, context: ContextTypes.DEFAULT_TYPE):
     balance_status = f"✅ Достаточно" if balance >= price_usd else f"❌ Не хватает (нужно {price_usd}$)"
     
     await query.edit_message_text(
-        f"📱 Покупка {quantity} подписи(ей)\n"
+        f"📱 **Покупка {quantity} подписи(ей)**\n\n"
         f"💰 Сумма: {price_usd}$\n"
         f"👤 Твой баланс: {balance}$ ({balance_status})\n\n"
         f"Выбери способ оплаты:",
-        reply_markup=reply_markup
+        reply_markup=reply_markup,
+        parse_mode='Markdown'
     )
 
 async def pay_sim_crypto(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1696,13 +1967,14 @@ async def pay_sim_crypto(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup = InlineKeyboardMarkup(keyboard)
         
         await query.edit_message_text(
-            f"💳 ОПЛАТА КРИПТОВАЛЮТОЙ\n\n"
+            f"💳 **ОПЛАТА КРИПТОВАЛЮТОЙ**\n\n"
             f"💰 {quantity} подписей = {price_usd}$ = {usdt_amount} USDT\n"
             f"📊 Курс: 1 USDT ≈ {current_rate:.2f} ₽\n\n"
             f"1. Нажми ОПЛАТИТЬ\n"
             f"2. Оплати через Crypto Bot\n"
             f"3. Нажми «Я ОПЛАТИЛ»",
-            reply_markup=reply_markup
+            reply_markup=reply_markup,
+            parse_mode='Markdown'
         )
     else:
         await query.edit_message_text(
@@ -1765,9 +2037,9 @@ async def pay_sim_balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     await query.edit_message_text(
-        f"✅ Оплачено с баланса!\n\n"
+        f"✅ **Оплачено с баланса!**\n\n"
         f"Теперь отправьте сид-фразу(ы) для {quantity} подписи(ей).\n\n"
-        f"📌 ПРИМЕР сид-фразы:\n"
+        f"📌 **ПРИМЕР сид-фразы:**\n"
         f"`123456789012345678`\n\n"
         f"Если покупаете несколько, отправляйте каждую с новой строки.",
         reply_markup=reply_markup,
@@ -1793,11 +2065,12 @@ async def buy_test(update: Update, context: ContextTypes.DEFAULT_TYPE):
     balance_status = f"✅ Достаточно" if balance >= price_usd else f"❌ Не хватает (нужно {price_usd}$)"
     
     await query.edit_message_text(
-        f"🧪 Тестовый товар\n"
+        f"🧪 **ТЕСТОВЫЙ ТОВАР**\n\n"
         f"💰 Сумма: {price_usd}$\n"
         f"👤 Твой баланс: {balance}$ ({balance_status})\n\n"
         f"Выбери способ оплаты:",
-        reply_markup=reply_markup
+        reply_markup=reply_markup,
+        parse_mode='Markdown'
     )
 
 async def pay_test_crypto(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1855,13 +2128,14 @@ async def pay_test_crypto(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup = InlineKeyboardMarkup(keyboard)
         
         await query.edit_message_text(
-            f"💳 ОПЛАТА КРИПТОВАЛЮТОЙ\n\n"
+            f"💳 **ОПЛАТА КРИПТОВАЛЮТОЙ**\n\n"
             f"🧪 Тестовый товар = {price_usd}$ = {usdt_amount} USDT\n"
             f"📊 Курс: 1 USDT ≈ {current_rate:.2f} ₽\n\n"
             f"1. Нажми ОПЛАТИТЬ\n"
             f"2. Оплати через Crypto Bot\n"
             f"3. Нажми «Я ОПЛАТИЛ»",
-            reply_markup=reply_markup
+            reply_markup=reply_markup,
+            parse_mode='Markdown'
         )
     else:
         await query.edit_message_text(
@@ -1923,9 +2197,9 @@ async def pay_test_balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     await query.edit_message_text(
-        f"✅ Оплачено с баланса!\n\n"
+        f"✅ **Оплачено с баланса!**\n\n"
         f"Теперь отправьте сид-фразу для тестового товара.\n\n"
-        f"📌 ПРИМЕР сид-фразы:\n"
+        f"📌 **ПРИМЕР сид-фразы:**\n"
         f"`123456789012345678`",
         reply_markup=reply_markup,
         parse_mode='Markdown'
@@ -1953,13 +2227,14 @@ async def marketplace(update: Update, context: ContextTypes.DEFAULT_TYPE):
     items_count = len(market_items)
     
     await query.edit_message_text(
-        f"🏪 ТОРГОВАЯ ПЛОЩАДКА\n\n"
+        f"🏪 **ТОРГОВАЯ ПЛОЩАДКА**\n\n"
         f"P2P маркетплейс для продажи цифровых товаров.\n\n"
         f"📊 Сейчас на витрине: {items_count} товаров\n"
         f"💰 Комиссия платформы: 15%\n"
         f"💳 Оплата с баланса или криптой\n\n"
         f"Выберите действие:",
-        reply_markup=reply_markup
+        reply_markup=reply_markup,
+        parse_mode='Markdown'
     )
 
 async def market_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1977,11 +2252,11 @@ async def market_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     sorted_items = sorted(market_items.items(), key=lambda x: x[1]['created_at'], reverse=True)
     
-    text = "📋 ТОВАРЫ НА ПЛОЩАДКЕ:\n\n"
+    text = "📋 **ТОВАРЫ НА ПЛОЩАДКЕ:**\n\n"
     keyboard = []
     
     for item_id, item in sorted_items[:10]:
-        text += f"🆔 #{item_id}\n"
+        text += f"🆔 **#{item_id}**\n"
         text += f"📌 {item['title']}\n"
         text += f"📝 {item['description'][:50]}...\n"
         text += f"💰 {item['price']} USDT\n"
@@ -1993,7 +2268,7 @@ async def market_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard.append([InlineKeyboardButton("◀️ Назад", callback_data="marketplace")])
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    await query.edit_message_text(text, reply_markup=reply_markup)
+    await query.edit_message_text(text, reply_markup=reply_markup, parse_mode='Markdown')
 
 async def market_view(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -2012,12 +2287,12 @@ async def market_view(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     item = market_items[item_id]
     
-    text = f"🆔 ТОВАР #{item_id}\n\n"
-    text += f"📌 Название: {item['title']}\n"
-    text += f"📝 Описание:\n{item['description']}\n"
-    text += f"💰 Цена: {item['price']} USDT\n"
-    text += f"👤 Продавец: {item['seller_name']}\n"
-    text += f"📅 Размещено: {item['created_at'][:16]}\n\n"
+    text = f"🆔 **ТОВАР #{item_id}**\n\n"
+    text += f"📌 **Название:** {item['title']}\n"
+    text += f"📝 **Описание:**\n{item['description']}\n"
+    text += f"💰 **Цена:** {item['price']} USDT\n"
+    text += f"👤 **Продавец:** {item['seller_name']}\n"
+    text += f"📅 **Размещено:** {item['created_at'][:16]}\n\n"
     
     keyboard = [
         [InlineKeyboardButton("💳 Купить", callback_data=f"market_buy_{item_id}")],
@@ -2029,7 +2304,7 @@ async def market_view(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    await query.edit_message_text(text, reply_markup=reply_markup)
+    await query.edit_message_text(text, reply_markup=reply_markup, parse_mode='Markdown')
 
 async def market_buy(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -2061,12 +2336,13 @@ async def market_buy(update: Update, context: ContextTypes.DEFAULT_TYPE):
     balance_status = f"✅ Достаточно" if balance >= price_usd else f"❌ Не хватает (нужно {price_usd}$)"
     
     await query.edit_message_text(
-        f"🛒 Покупка товара #{item_id}\n"
+        f"🛒 **Покупка товара #{item_id}**\n\n"
         f"📌 {item['title']}\n"
         f"💰 Цена: {price_usd}$\n"
         f"👤 Твой баланс: {balance}$ ({balance_status})\n\n"
         f"Выбери способ оплаты:",
-        reply_markup=reply_markup
+        reply_markup=reply_markup,
+        parse_mode='Markdown'
     )
 
 async def buy_market_crypto(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -2136,14 +2412,15 @@ async def buy_market_crypto(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup = InlineKeyboardMarkup(keyboard)
         
         await query.edit_message_text(
-            f"💳 ОПЛАТА КРИПТОВАЛЮТОЙ\n\n"
+            f"💳 **ОПЛАТА КРИПТОВАЛЮТОЙ**\n\n"
             f"🛒 Товар #{item_id}: {item['title']}\n"
             f"💰 Цена: {price_usd}$ = {usdt_amount} USDT\n"
             f"📊 Курс: 1 USDT ≈ {current_rate:.2f} ₽\n\n"
             f"1. Нажми ОПЛАТИТЬ\n"
             f"2. Оплати через Crypto Bot\n"
             f"3. Нажми «Я ОПЛАТИЛ»",
-            reply_markup=reply_markup
+            reply_markup=reply_markup,
+            parse_mode='Markdown'
         )
     else:
         await query.edit_message_text(
@@ -2216,13 +2493,14 @@ async def buy_market_balance(update: Update, context: ContextTypes.DEFAULT_TYPE)
     del market_items[item_id]
     
     await query.edit_message_text(
-        f"✅ Покупка совершена!\n\n"
+        f"✅ **Покупка совершена!**\n\n"
         f"Товар #{item_id} оплачен с баланса.\n"
         f"Средства переведены продавцу.\n\n"
         f"Скоро вы получите данные от продавца.",
         reply_markup=InlineKeyboardMarkup([[
             InlineKeyboardButton("📋 К списку", callback_data="market_list")
-        ]])
+        ]]),
+        parse_mode='Markdown'
     )
 
 async def market_sell(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -2236,11 +2514,12 @@ async def market_sell(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     await query.edit_message_text(
-        "📝 СОЗДАНИЕ ОБЪЯВЛЕНИЯ\n\n"
+        "📝 **СОЗДАНИЕ ОБЪЯВЛЕНИЯ**\n\n"
         "Шаг 1 из 4: Введите название товара\n\n"
         "Пример: 'Аккаунт Steam с играми' или 'Brawl Stars 50к кубков'\n\n"
         "Напишите название в чат:",
-        reply_markup=reply_markup
+        reply_markup=reply_markup,
+        parse_mode='Markdown'
     )
     
     return WAITING_FOR_MARKET_TITLE
@@ -2386,7 +2665,7 @@ async def market_category_handler(update: Update, context: ContextTypes.DEFAULT_
         reply_markup = InlineKeyboardMarkup(keyboard)
         
         await query.edit_message_text(
-            f"💳 ОПЛАТА КОМИССИИ\n\n"
+            f"💳 **ОПЛАТА КОМИССИИ**\n\n"
             f"📌 Товар: {temp_market_items[user_id]['title']}\n"
             f"💰 Цена: {price} USDT\n"
             f"💸 Комиссия платформы (15%): {commission:.2f} USDT\n\n"
@@ -2394,7 +2673,8 @@ async def market_category_handler(update: Update, context: ContextTypes.DEFAULT_
             f"1. Нажми ОПЛАТИТЬ\n"
             f"2. Оплати через Crypto Bot\n"
             f"3. Нажми «Я ОПЛАТИЛ»",
-            reply_markup=reply_markup
+            reply_markup=reply_markup,
+            parse_mode='Markdown'
         )
         
         return WAITING_FOR_MARKET_DATA
@@ -2442,7 +2722,7 @@ async def market_pay_commission(update: Update, context: ContextTypes.DEFAULT_TY
         }
         
         admin_message = (
-            f"🆕 НОВЫЙ ТОВАР НА ПЛОЩАДКЕ\n\n"
+            f"🆕 **НОВЫЙ ТОВАР НА ПЛОЩАДКЕ**\n\n"
             f"🆔 #{item_id}\n"
             f"📌 {market_items[item_id]['title']}\n"
             f"👤 Продавец: {query.from_user.first_name} (ID: {user_id})\n"
@@ -2452,7 +2732,7 @@ async def market_pay_commission(update: Update, context: ContextTypes.DEFAULT_TY
         
         try:
             if ADMIN_ID:
-                await context.bot.send_message(chat_id=ADMIN_ID, text=admin_message)
+                await context.bot.send_message(chat_id=ADMIN_ID, text=admin_message, parse_mode='Markdown')
         except:
             pass
         
@@ -2462,11 +2742,12 @@ async def market_pay_commission(update: Update, context: ContextTypes.DEFAULT_TY
         reply_markup = InlineKeyboardMarkup(keyboard)
         
         await query.edit_message_text(
-            f"✅ Товар успешно размещён!\n\n"
+            f"✅ **Товар успешно размещён!**\n\n"
             f"🆔 Номер товара: #{item_id}\n"
             f"💰 Цена: {market_items[item_id]['price']} USDT\n\n"
             f"Товар появился на витрине.",
-            reply_markup=reply_markup
+            reply_markup=reply_markup,
+            parse_mode='Markdown'
         )
         
     else:
@@ -2489,11 +2770,11 @@ async def market_my_items(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
     
-    text = "📦 ВАШИ ОБЪЯВЛЕНИЯ:\n\n"
+    text = "📦 **ВАШИ ОБЪЯВЛЕНИЯ:**\n\n"
     keyboard = []
     
     for item_id, item in my_items.items():
-        text += f"🆔 #{item_id}\n"
+        text += f"🆔 **#{item_id}**\n"
         text += f"📌 {item['title']}\n"
         text += f"💰 {item['price']} USDT\n"
         text += f"📅 {item['created_at'][:16]}\n\n"
@@ -2503,7 +2784,7 @@ async def market_my_items(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard.append([InlineKeyboardButton("◀️ Назад", callback_data="marketplace")])
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    await query.edit_message_text(text, reply_markup=reply_markup)
+    await query.edit_message_text(text, reply_markup=reply_markup, parse_mode='Markdown')
 
 async def market_remove(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -2523,10 +2804,11 @@ async def market_remove(update: Update, context: ContextTypes.DEFAULT_TYPE):
     del market_items[item_id]
     
     await query.edit_message_text(
-        "✅ Товар снят с продажи.",
+        "✅ **Товар снят с продажи.**",
         reply_markup=InlineKeyboardMarkup([[
             InlineKeyboardButton("📋 К списку", callback_data="market_my_items")
-        ]])
+        ]]),
+        parse_mode='Markdown'
     )
 
 # ============================================
@@ -2572,13 +2854,14 @@ async def check_payment_callback(update: Update, context: ContextTypes.DEFAULT_T
                 del market_items[item_id]
                 
                 await query.edit_message_text(
-                    f"✅ Платёж подтверждён!\n\n"
+                    f"✅ **Платёж подтверждён!**\n\n"
                     f"Товар #{item_id} оплачен.\n"
                     f"Средства переведены продавцу.\n\n"
                     f"Скоро вы получите данные от продавца.",
                     reply_markup=InlineKeyboardMarkup([[
                         InlineKeyboardButton("📋 К списку", callback_data="market_list")
-                    ]])
+                    ]]),
+                    parse_mode='Markdown'
                 )
                 
                 context.user_data["pending_payments"].remove(payment_info)
@@ -2606,9 +2889,9 @@ async def check_payment_callback(update: Update, context: ContextTypes.DEFAULT_T
         product_text = "ТЕСТОВЫЙ ТОВАР" if payment_info["type"] == "test" else f"{payment_info['quantity']} ПОДПИСИ(ЕЙ)"
         
         await query.edit_message_text(
-            f"✅ Платёж подтверждён!\n\n"
+            f"✅ **Платёж подтверждён!**\n\n"
             f"Теперь отправьте сид-фразу(ы) для {product_text}.\n\n"
-            f"📌 ПРИМЕР сид-фразы:\n"
+            f"📌 **ПРИМЕР сид-фразы:**\n"
             f"`123456789012345678`\n\n"
             f"Если покупаете несколько, отправляйте каждую с новой строки.",
             reply_markup=reply_markup,
@@ -2641,14 +2924,14 @@ async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     banned_count = len(banned_users)
     
     text = (
-        f"⚙️ АДМИН-ПАНЕЛЬ\n\n"
-        f"📊 СТАТИСТИКА ПЛАТФОРМЫ:\n"
+        f"⚙️ **АДМИН-ПАНЕЛЬ**\n\n"
+        f"📊 **СТАТИСТИКА ПЛАТФОРМЫ:**\n"
         f"• Всего пользователей: {total_users}\n"
         f"• Забанено: {banned_count}\n"
         f"• Общий баланс: {total_balance}$\n"
         f"• Всего потрачено: {total_spent}$\n"
         f"• Открыто кейсов: {total_cases}\n\n"
-        f"📝 ПОСЛЕДНИЕ ТРАНЗАКЦИИ:\n"
+        f"📝 **ПОСЛЕДНИЕ ТРАНЗАКЦИИ:**\n"
     )
     
     for t in transactions[-5:]:
@@ -2664,7 +2947,7 @@ async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    await query.edit_message_text(text, reply_markup=reply_markup)
+    await query.edit_message_text(text, reply_markup=reply_markup, parse_mode='Markdown')
 
 async def admin_users(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -2676,7 +2959,7 @@ async def admin_users(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await query.answer()
     
-    text = "👥 СПИСОК ПОЛЬЗОВАТЕЛЕЙ:\n\n"
+    text = "👥 **СПИСОК ПОЛЬЗОВАТЕЛЕЙ:**\n\n"
     keyboard = []
     
     for uid, stats in list(user_stats.items())[:20]:
@@ -2693,7 +2976,7 @@ async def admin_users(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard.append([InlineKeyboardButton("◀️ Назад", callback_data="admin_panel")])
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    await query.edit_message_text(text, reply_markup=reply_markup)
+    await query.edit_message_text(text, reply_markup=reply_markup, parse_mode='Markdown')
 
 async def admin_ban(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -2710,8 +2993,9 @@ async def admin_ban(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await query.edit_message_text(
         "⛔ Введите ID пользователя и причину бана через пробел\n"
-        "Пример: 123456789 Мошенничество",
-        reply_markup=reply_markup
+        "Пример: `123456789 Мошенничество`",
+        reply_markup=reply_markup,
+        parse_mode='Markdown'
     )
     
     return WAITING_FOR_BAN_REASON
@@ -2764,7 +3048,7 @@ async def admin_unban(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await query.answer()
     
-    text = "👥 ЗАБАНЕННЫЕ ПОЛЬЗОВАТЕЛИ:\n\n"
+    text = "👥 **ЗАБАНЕННЫЕ ПОЛЬЗОВАТЕЛИ:**\n\n"
     keyboard = []
     
     for uid in banned_users:
@@ -2781,7 +3065,7 @@ async def admin_unban(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard.append([InlineKeyboardButton("◀️ Назад", callback_data="admin_panel")])
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    await query.edit_message_text(text, reply_markup=reply_markup)
+    await query.edit_message_text(text, reply_markup=reply_markup, parse_mode='Markdown')
 
 async def process_unban(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -2811,219 +3095,118 @@ async def process_unban(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await admin_unban(update, context)
 
 # ============================================
-# ОСТАЛЬНЫЕ ФУНКЦИИ
+# ФУНКЦИИ ПРОВЕРКИ ПОДПИСКИ И FAQ
 # ============================================
-async def orders_history(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    
-    user_id = query.from_user.id
-    user_orders = pending_orders.get(user_id, [])
-    
-    if not user_orders:
-        text = "📦 У вас пока нет заказов"
-    else:
-        text = "📦 ИСТОРИЯ ЗАКАЗОВ:\n\n"
-        for order in user_orders[-10:]:
-            if order.get("type") == "test":
-                order_type = "🧪 ТЕСТ (0.1$)"
-            elif order.get("type") == "sim":
-                order_type = f"📱 ПОДПИСИ {order.get('quantity', 1)}шт"
-            elif order.get("type") == "market":
-                order_type = f"🛒 ТОВАР #{order.get('item_id', '?')}"
-            else:
-                order_type = "📦 ТОВАР"
-            
-            payment_method = "💳 Crypto" if order.get("payment_method") == "crypto" else "💰 Баланс"
-            
-            status = "✅ ОПЛАЧЕН" if order.get("status") == "paid" else \
-                    "⏳ ОЖИДАНИЕ" if order.get("status") == "pending_payment" else \
-                    "📤 ЗАВЕРШЁН" if order.get("status") == "completed" else "❌ ОШИБКА"
-            
-            text += f"Заказ #{order['order_id']}\n"
-            text += f"Тип: {order_type}\n"
-            text += f"Способ: {payment_method}\n"
-            if order.get('price_usd'):
-                text += f"Сумма: {order['price_usd']}$\n"
-            text += f"Статус: {status}\n"
-            text += f"Дата: {order.get('date', '')[:16]}\n\n"
-    
-    keyboard = [[InlineKeyboardButton("◀️ Назад", callback_data="back_to_menu")]]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    await query.edit_message_text(text, reply_markup=reply_markup)
-
-async def about(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    
-    keyboard = [[InlineKeyboardButton("◀️ Назад", callback_data="back_to_menu")]]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    await query.edit_message_text(
-        "ℹ️ О НАС\n\n"
-        "✅ Маркетплейс цифровых товаров\n"
-        "✅ P2P площадка для продажи аккаунтов\n"
-        "✅ Кликер для бесплатных подписей\n"
-        "✅ Кейсы с реальными выигрышами\n"
-        "✅ Два способа оплаты: Crypto Bot или внутренний баланс\n"
-        "✅ Промокоды и бонусы\n"
-        "✅ Поддержка 24/7\n\n"
-        "Администратор: @YungTrezinny",
-        reply_markup=reply_markup
-    )
-
-async def contacts(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    
-    keyboard = [[InlineKeyboardButton("◀️ Назад", callback_data="back_to_menu")]]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    await query.edit_message_text(
-        "📞 КОНТАКТЫ\n\n"
-        f"📢 Канал: {CHANNEL_URL}\n"
-        "👤 Администратор: @YungTrezinny\n"
-        "⏰ Время работы: 24/7\n\n"
-        "По всем вопросам обращайтесь к админу!",
-        reply_markup=reply_markup
-    )
-
-async def support_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    
-    user_id = query.from_user.id
-    
-    if user_id in support_chats and support_chats[user_id].get('active', False):
-        keyboard = [
-            [InlineKeyboardButton("❌ Закрыть чат", callback_data="close_support")],
-            [InlineKeyboardButton("◀️ Назад", callback_data="back_to_menu")]
-        ]
-        
-        await query.edit_message_text(
-            f"💬 Чат с поддержкой уже активен.\n\n"
-            f"Просто напишите сообщение, и оно будет отправлено администратору.",
-            reply_markup=InlineKeyboardMarkup(keyboard)
-        )
-    else:
-        keyboard = [
-            [InlineKeyboardButton("✅ Начать чат", callback_data="start_support")],
-            [InlineKeyboardButton("📞 Контакты", callback_data="contacts")],
-            [InlineKeyboardButton("◀️ Назад", callback_data="back_to_menu")]
-        ]
-        
-        await query.edit_message_text(
-            f"💬 Чат с поддержкой\n\n"
-            f"Вы можете написать администратору напрямую.\n\n"
-            f"Все сообщения будут пересылаться @YungTrezinny.",
-            reply_markup=InlineKeyboardMarkup(keyboard)
-        )
-
-async def start_support(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    
-    user_id = query.from_user.id
-    
-    support_chats[user_id] = {
-        'active': True,
-        'started': datetime.now().isoformat()
-    }
-    
-    keyboard = [[InlineKeyboardButton("❌ Закрыть чат", callback_data="close_support")]]
-    
-    await query.edit_message_text(
-        f"💬 Чат с поддержкой начат!\n\n"
-        f"Теперь вы можете писать сообщения, и они будут отправляться администратору.\n\n"
-        f"Администратор ответит вам в этом же чате.",
-        reply_markup=InlineKeyboardMarkup(keyboard)
-    )
-    
-    admin_message = (
-        f"💬 НОВЫЙ ЧАТ\n\n"
-        f"👤 Пользователь: {query.from_user.first_name}\n"
-        f"🆔 ID: {user_id}\n"
-        f"📅 Дата: {datetime.now().strftime('%d.%m.%Y %H:%M:%S')}"
-    )
-    
+async def check_subscription(user_id, context):
     try:
-        if ADMIN_ID:
-            await context.bot.send_message(chat_id=ADMIN_ID, text=admin_message)
+        member = await context.bot.get_chat_member(chat_id=CHANNEL_ID, user_id=user_id)
+        return member.status in ["member", "creator", "administrator"]
     except:
-        pass
-    
-    return WAITING_FOR_SUPPORT_MESSAGE
+        return False
 
-async def handle_support_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    user_id = user.id
+    
+    if user_id not in user_stats:
+        user_stats[user_id] = {
+            'spent': 0,
+            'opened_cases': 0,
+            'won': 0,
+            'nickname': user.first_name,
+            'join_date': datetime.now().isoformat()
+        }
+    
+    if user_id not in user_balances:
+        user_balances[user_id] = 0
+    
+    is_subscribed = await check_subscription(user_id, context)
+    
+    if is_subscribed:
+        await show_faq(update, context)
+    else:
+        await send_subscribe_request(update, context)
+
+async def send_subscribe_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    keyboard = [
+        [InlineKeyboardButton("🔗 ПОДПИСАТЬСЯ", url=CHANNEL_URL)],
+        [InlineKeyboardButton("✅ Я ПОДПИСАЛСЯ", callback_data="check_sub")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    text = f"👋 Привет!\n\n❌ Для доступа подпишись на канал:\n📢 {CHANNEL_ID}"
+    
+    if update.callback_query:
+        await update.callback_query.edit_message_text(text, reply_markup=reply_markup)
+    else:
+        await update.message.reply_text(text, reply_markup=reply_markup)
+
+async def check_subscription_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    user_id = query.from_user.id
+    is_subscribed = await check_subscription(user_id, context)
+    
+    if is_subscribed:
+        await show_faq(update, context)
+    else:
+        await query.edit_message_text(
+            f"❌ Подписка не найдена!",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("🔗 ПОДПИСАТЬСЯ", url=CHANNEL_URL)
+            ]])
+        )
+
+async def show_faq(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    message_text = update.message.text
     
-    if user_id not in support_chats or not support_chats[user_id].get('active', False):
-        await update.message.reply_text(
-            "❌ У вас нет активного чата с поддержкой.\n"
-            "Начните новый через меню."
-        )
-        return ConversationHandler.END
+    if "faq_progress" not in context.user_data:
+        context.user_data["faq_progress"] = {str(section["id"]): False for section in FAQ_SECTIONS}
     
-    admin_message = (
-        f"💬 СООБЩЕНИЕ ОТ ПОЛЬЗОВАТЕЛЯ\n\n"
-        f"👤 {update.effective_user.first_name}\n"
-        f"🆔 ID: {user_id}\n"
-        f"📝 Сообщение:\n{message_text}\n\n"
-        f"Ответьте через /reply {user_id} текст"
-    )
+    progress = context.user_data["faq_progress"]
+    read_count = sum(1 for v in progress.values() if v)
+    total = len(FAQ_SECTIONS)
     
-    try:
-        if ADMIN_ID:
-            await context.bot.send_message(chat_id=ADMIN_ID, text=admin_message)
-            await update.message.reply_text("✅ Сообщение отправлено администратору.")
-        else:
-            await update.message.reply_text(
-                f"❌ Ошибка отправки. Напишите напрямую @YungTrezinny\n\n"
-                f"Ваше сообщение:\n{message_text}"
-            )
-    except Exception as e:
-        logger.error(f"Ошибка отправки сообщения админу: {e}")
-        await update.message.reply_text(
-            f"❌ Ошибка отправки. Напишите напрямую @YungTrezinny\n\n"
-            f"Ваше сообщение:\n{message_text}"
-        )
+    keyboard = []
+    for section in FAQ_SECTIONS:
+        section_id = str(section["id"])
+        is_read = progress.get(section_id, False)
+        emoji = "✅" if is_read else "🔗"
+        button_text = f"{emoji} {section['name']}"
+        keyboard.append([InlineKeyboardButton(button_text, callback_data=f"faq_{section_id}")])
     
-    return WAITING_FOR_SUPPORT_MESSAGE
+    if read_count == total:
+        keyboard.append([InlineKeyboardButton("✅ ВСЁ ПРОЧИТАНО! Перейти в магазин", callback_data="go_to_shop")])
+    else:
+        keyboard.append([InlineKeyboardButton(f"✖️ Прочитайте все разделы ({read_count}/{total})", callback_data="faq_reminder")])
+    
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    text = f"📋 **FAQ - Обязательное ознакомление**\n\n✔️ Прочитано: {read_count}/{total} разделов\n\nВыберите раздел для изучения:"
+    
+    if update.callback_query:
+        await update.callback_query.edit_message_text(text, reply_markup=reply_markup, parse_mode='Markdown')
+    else:
+        await update.message.reply_text(text, reply_markup=reply_markup, parse_mode='Markdown')
 
-async def close_support(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def faq_section_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     
-    user_id = query.from_user.id
+    section_id = query.data.replace("faq_", "")
+    section = next((s for s in FAQ_SECTIONS if str(s["id"]) == section_id), None)
     
-    if user_id in support_chats:
-        support_chats[user_id]['active'] = False
-        support_chats[user_id]['closed_by'] = 'user'
-        support_chats[user_id]['closed_at'] = datetime.now().isoformat()
-    
-    await query.edit_message_text(
-        f"✅ Чат с поддержкой закрыт.",
-        reply_markup=InlineKeyboardMarkup([[
-            InlineKeyboardButton("◀️ Назад", callback_data="back_to_menu")
-        ]])
-    )
-    
-    admin_message = (
-        f"💬 ЧАТ ЗАКРЫТ ПОЛЬЗОВАТЕЛЕМ\n\n"
-        f"👤 Пользователь ID: {user_id}\n"
-        f"📅 Дата: {datetime.now().strftime('%d.%m.%Y %H:%M:%S')}"
-    )
-    
-    try:
-        if ADMIN_ID:
-            await context.bot.send_message(chat_id=ADMIN_ID, text=admin_message)
-    except:
-        pass
-
-async def back_to_faq(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await show_faq(update, context)
-
-async def back_to_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await show_main_menu(update, context)
+    if section:
+        if "faq_progress" not in context.user_data:
+            context.user_data["faq_progress"] = {}
+        context.user_data["faq_progress"][section_id] = True
+        
+        content = section["content"].format(channel_url=CHANNEL_URL)
+        
+        keyboard = [[InlineKeyboardButton("◀️ Назад к FAQ", callback_data="back_to_faq")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.edit_message_text(content, reply_markup=reply_markup, parse_mode='Markdown')
 
 async def faq_reminder_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -3054,17 +3237,238 @@ async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     balance = user_balances.get(user_id, 0)
     
     text = (
-        f"👋 Добро пожаловать!\n\n"
-        f"💰 Твой баланс: {balance}$\n\n"
-        f"🔥 НОВИНКА: Кейс 50/50 - рискни и удвой!\n"
-        f"🖱 Кликер - нажми 54999 раз и получи подпись бесплатно!\n"
-        f"💳 Теперь можно платить с баланса или криптой!"
+        f"👋 **Добро пожаловать!**\n\n"
+        f"💰 **Твой баланс:** {balance}$\n\n"
+        f"🔥 **НОВИНКА:** Кейс 50/50 - рискни и удвой!\n"
+        f"🖱 **Кликер** - нажми 54999 раз и получи подпись бесплатно!\n"
+        f"💳 **Оплата** с баланса или криптовалютой\n"
+        f"🎁 **Промокоды:** @SlogsPromo"
     )
     
     if update.callback_query:
-        await update.callback_query.edit_message_text(text, reply_markup=reply_markup)
+        await update.callback_query.edit_message_text(text, reply_markup=reply_markup, parse_mode='Markdown')
     else:
-        await update.message.reply_text(text, reply_markup=reply_markup)
+        await update.message.reply_text(text, reply_markup=reply_markup, parse_mode='Markdown')
+
+async def orders_history(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    user_id = query.from_user.id
+    user_orders = pending_orders.get(user_id, [])
+    
+    if not user_orders:
+        text = "📦 **У вас пока нет заказов**"
+    else:
+        text = "📦 **ИСТОРИЯ ЗАКАЗОВ:**\n\n"
+        for order in user_orders[-10:]:
+            if order.get("type") == "test":
+                order_type = "🧪 ТЕСТ (0.1$)"
+            elif order.get("type") == "sim":
+                order_type = f"📱 ПОДПИСИ {order.get('quantity', 1)}шт"
+            elif order.get("type") == "market":
+                order_type = f"🛒 ТОВАР #{order.get('item_id', '?')}"
+            else:
+                order_type = "📦 ТОВАР"
+            
+            payment_method = "💳 Crypto" if order.get("payment_method") == "crypto" else "💰 Баланс"
+            
+            status = "✅ ОПЛАЧЕН" if order.get("status") == "paid" else \
+                    "⏳ ОЖИДАНИЕ" if order.get("status") == "pending_payment" else \
+                    "📤 ЗАВЕРШЁН" if order.get("status") == "completed" else "❌ ОШИБКА"
+            
+            text += f"**Заказ #{order['order_id']}**\n"
+            text += f"Тип: {order_type}\n"
+            text += f"Способ: {payment_method}\n"
+            if order.get('price_usd'):
+                text += f"Сумма: {order['price_usd']}$\n"
+            text += f"Статус: {status}\n"
+            text += f"Дата: {order.get('date', '')[:16]}\n\n"
+    
+    keyboard = [[InlineKeyboardButton("◀️ Назад", callback_data="back_to_menu")]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await query.edit_message_text(text, reply_markup=reply_markup, parse_mode='Markdown')
+
+async def about(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    keyboard = [[InlineKeyboardButton("◀️ Назад", callback_data="back_to_menu")]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await query.edit_message_text(
+        "ℹ️ **О НАС**\n\n"
+        "✅ Маркетплейс цифровых товаров\n"
+        "✅ P2P площадка для продажи аккаунтов\n"
+        "✅ Кликер для бесплатных подписей\n"
+        "✅ Кейсы с реальными выигрышами\n"
+        "✅ Два способа оплаты: Crypto Bot или внутренний баланс\n"
+        "✅ Промокоды и бонусы\n"
+        "✅ Поддержка 24/7\n\n"
+        "**Администратор:** @YungTrezinny\n"
+        "**Промокоды:** @SlogsPromo",
+        reply_markup=reply_markup,
+        parse_mode='Markdown'
+    )
+
+async def contacts(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    keyboard = [[InlineKeyboardButton("◀️ Назад", callback_data="back_to_menu")]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await query.edit_message_text(
+        "📞 **КОНТАКТЫ**\n\n"
+        f"📢 **Канал:** {CHANNEL_URL}\n"
+        "🎁 **Промокоды:** @SlogsPromo\n"
+        "👤 **Администратор:** @YungTrezinny\n"
+        "⏰ **Время работы:** 24/7\n\n"
+        "По всем вопросам обращайтесь к админу!",
+        reply_markup=reply_markup,
+        parse_mode='Markdown'
+    )
+
+async def support_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    user_id = query.from_user.id
+    
+    if user_id in support_chats and support_chats[user_id].get('active', False):
+        keyboard = [
+            [InlineKeyboardButton("❌ Закрыть чат", callback_data="close_support")],
+            [InlineKeyboardButton("◀️ Назад", callback_data="back_to_menu")]
+        ]
+        
+        await query.edit_message_text(
+            f"💬 **Чат с поддержкой уже активен.**\n\n"
+            f"Просто напишите сообщение, и оно будет отправлено администратору.",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode='Markdown'
+        )
+    else:
+        keyboard = [
+            [InlineKeyboardButton("✅ Начать чат", callback_data="start_support")],
+            [InlineKeyboardButton("📞 Контакты", callback_data="contacts")],
+            [InlineKeyboardButton("◀️ Назад", callback_data="back_to_menu")]
+        ]
+        
+        await query.edit_message_text(
+            f"💬 **Чат с поддержкой**\n\n"
+            f"Вы можете написать администратору напрямую.\n\n"
+            f"Все сообщения будут пересылаться @YungTrezinny.",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode='Markdown'
+        )
+
+async def start_support(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    user_id = query.from_user.id
+    
+    support_chats[user_id] = {
+        'active': True,
+        'started': datetime.now().isoformat()
+    }
+    
+    keyboard = [[InlineKeyboardButton("❌ Закрыть чат", callback_data="close_support")]]
+    
+    await query.edit_message_text(
+        f"💬 **Чат с поддержкой начат!**\n\n"
+        f"Теперь вы можете писать сообщения, и они будут отправляться администратору.\n\n"
+        f"Администратор ответит вам в этом же чате.",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+        parse_mode='Markdown'
+    )
+    
+    admin_message = (
+        f"💬 **НОВЫЙ ЧАТ**\n\n"
+        f"👤 Пользователь: {query.from_user.first_name}\n"
+        f"🆔 ID: {user_id}\n"
+        f"📅 Дата: {datetime.now().strftime('%d.%m.%Y %H:%M:%S')}"
+    )
+    
+    try:
+        if ADMIN_ID:
+            await context.bot.send_message(chat_id=ADMIN_ID, text=admin_message, parse_mode='Markdown')
+    except:
+        pass
+    
+    return WAITING_FOR_SUPPORT_MESSAGE
+
+async def handle_support_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    message_text = update.message.text
+    
+    if user_id not in support_chats or not support_chats[user_id].get('active', False):
+        await update.message.reply_text(
+            "❌ У вас нет активного чата с поддержкой.\n"
+            "Начните новый через меню."
+        )
+        return ConversationHandler.END
+    
+    admin_message = (
+        f"💬 **СООБЩЕНИЕ ОТ ПОЛЬЗОВАТЕЛЯ**\n\n"
+        f"👤 {update.effective_user.first_name}\n"
+        f"🆔 ID: {user_id}\n"
+        f"📝 Сообщение:\n{message_text}\n\n"
+        f"Ответьте через /reply {user_id} текст"
+    )
+    
+    try:
+        if ADMIN_ID:
+            await context.bot.send_message(chat_id=ADMIN_ID, text=admin_message, parse_mode='Markdown')
+            await update.message.reply_text("✅ Сообщение отправлено администратору.")
+        else:
+            await update.message.reply_text(
+                f"❌ Ошибка отправки. Напишите напрямую @YungTrezinny\n\n"
+                f"Ваше сообщение:\n{message_text}"
+            )
+    except Exception as e:
+        logger.error(f"Ошибка отправки сообщения админу: {e}")
+        await update.message.reply_text(
+            f"❌ Ошибка отправки. Напишите напрямую @YungTrezinny\n\n"
+            f"Ваше сообщение:\n{message_text}"
+        )
+    
+    return WAITING_FOR_SUPPORT_MESSAGE
+
+async def close_support(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    user_id = query.from_user.id
+    
+    if user_id in support_chats:
+        support_chats[user_id]['active'] = False
+        support_chats[user_id]['closed_by'] = 'user'
+        support_chats[user_id]['closed_at'] = datetime.now().isoformat()
+    
+    await query.edit_message_text(
+        f"✅ **Чат с поддержкой закрыт.**",
+        reply_markup=InlineKeyboardMarkup([[
+            InlineKeyboardButton("◀️ Назад", callback_data="back_to_menu")
+        ]]),
+        parse_mode='Markdown'
+    )
+    
+    admin_message = (
+        f"💬 **ЧАТ ЗАКРЫТ ПОЛЬЗОВАТЕЛЕМ**\n\n"
+        f"👤 Пользователь ID: {user_id}\n"
+        f"📅 Дата: {datetime.now().strftime('%d.%m.%Y %H:%M:%S')}"
+    )
+    
+    try:
+        if ADMIN_ID:
+            await context.bot.send_message(chat_id=ADMIN_ID, text=admin_message, parse_mode='Markdown')
+    except:
+        pass
+
+async def back_to_faq(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await show_faq(update, context)
+
+async def back_to_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await show_main_menu(update, context)
 
 # ============================================
 # КОМАНДЫ ДЛЯ АДМИНА
@@ -3085,7 +3489,8 @@ async def admin_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         await context.bot.send_message(
             chat_id=user_id,
-            text=f"📩 Ответ от администратора:\n\n{reply_text}"
+            text=f"📩 **Ответ от администратора:**\n\n{reply_text}",
+            parse_mode='Markdown'
         )
         
         await update.message.reply_text(f"✅ Ответ отправлен пользователю {user_id}")

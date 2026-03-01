@@ -45,6 +45,7 @@ WAITING_FOR_ADMIN_BALANCE_CHECK = 23
 WAITING_FOR_ADMIN_BALANCE_REMOVE = 24
 WAITING_FOR_MARKET_ITEM_DATA = 25
 WAITING_FOR_SIM_OPERATOR = 26
+WAITING_FOR_DAILY_BONUS = 27  # Добавлено недостающее состояние
 
 # Токен и канал из переменных окружения
 TOKEN = os.getenv("BOT_TOKEN")
@@ -109,7 +110,7 @@ MARKET_CATEGORIES = [
 ]
 
 # ============================================
-# КАТЕГОРИИ КЕЙСОВ (ДОБАВЛЕН ИНВЕНТАРЬ)
+# КАТЕГОРИИ КЕЙСОВ
 # ============================================
 CASE_CATEGORIES = {
     'inventory': {
@@ -117,7 +118,7 @@ CASE_CATEGORIES = {
         'desc': '📦 Кейсы, полученные в бонусах',
         'emoji': '🎒',
         'color': '🟣',
-        'cases': []  # Динамически из user_data
+        'cases': []
     },
     'start': {
         'name': '🚀 СТАРТОВЫЕ КЕЙСЫ',
@@ -1302,7 +1303,7 @@ async def profile_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
 
 # ============================================
-# ИНВЕНТАРЬ КЕЙСОВ (НОВАЯ ПОДКАТЕГОРИЯ)
+# ИНВЕНТАРЬ КЕЙСОВ
 # ============================================
 async def case_inventory(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -1461,7 +1462,7 @@ async def open_inventory_case(update: Update, context: ContextTypes.DEFAULT_TYPE
     await message.edit_text(final_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
 
 # ============================================
-# КЕЙСЫ (ОБНОВЛЕННЫЕ С ИНВЕНТАРЕМ)
+# КЕЙСЫ
 # ============================================
 async def cases_categories(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -1476,14 +1477,14 @@ async def cases_categories(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     keyboard = []
     
-    # Инвентарь показываем всегда, даже если пусто
+    # Инвентарь показываем всегда
     inv_text = f"🎒 МОИ КЕЙСЫ"
     if inventory_count > 0:
         inv_text += f" [{inventory_count}]"
     keyboard.append([InlineKeyboardButton(inv_text, callback_data="case_inventory")])
     
     for cat_id, cat in CASE_CATEGORIES.items():
-        if cat_id != 'inventory':  # Инвентарь уже добавили
+        if cat_id != 'inventory':
             text += f"{cat['emoji']} **{cat['name']}**\n{cat['desc']}\n\n"
             keyboard.append([InlineKeyboardButton(
                 f"{cat['emoji']} {cat['name']}",
@@ -1916,7 +1917,7 @@ async def check_case_payment(update: Update, context: ContextTypes.DEFAULT_TYPE)
     await message.edit_text(final_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
 
 # ============================================
-# МАРКЕТПЛЕЙС (ИСПРАВЛЕННЫЙ)
+# МАРКЕТПЛЕЙС
 # ============================================
 async def marketplace(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -2360,7 +2361,7 @@ async def check_subscription_callback(update: Update, context: ContextTypes.DEFA
         )
 
 # ============================================
-# FAQ (КРАТКАЯ ВЕРСИЯ)
+# FAQ
 # ============================================
 async def show_faq(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if "faq_progress" not in context.user_data:
@@ -2656,7 +2657,7 @@ async def process_promo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ConversationHandler.END
 
 # ============================================
-# АДМИН-ПАНЕЛЬ (УПРОЩЕННАЯ)
+# АДМИН-ПАНЕЛЬ
 # ============================================
 async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -2945,20 +2946,23 @@ async def admin_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # MAIN
 # ============================================
 def main():
+    # Добавляем per_message=False для всех ConversationHandler чтобы убрать предупреждения
     persistence = PicklePersistence(filepath="bot_data.pkl")
     app = Application.builder().token(TOKEN).persistence(persistence).build()
     
-    # ConversationHandler'ы
+    # ConversationHandler'ы с per_message=False
     nickname_handler = ConversationHandler(
         entry_points=[CallbackQueryHandler(change_nickname, pattern="^change_nickname$")],
         states={WAITING_FOR_NICKNAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, set_nickname)]},
-        fallbacks=[CommandHandler("cancel", cancel_input)]
+        fallbacks=[CommandHandler("cancel", cancel_input)],
+        per_message=False
     )
     
     captcha_handler = ConversationHandler(
         entry_points=[CallbackQueryHandler(clicker_click, pattern="^clicker_click$")],
         states={WAITING_FOR_CAPTCHA: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_captcha_answer)]},
-        fallbacks=[CommandHandler("cancel", cancel_input)]
+        fallbacks=[CommandHandler("cancel", cancel_input)],
+        per_message=False
     )
     
     sim_seed_handler = ConversationHandler(
@@ -2970,25 +2974,29 @@ def main():
             CallbackQueryHandler(check_sim_payment, pattern="^check_sim_payment_")
         ],
         states={WAITING_FOR_SIM_SEED: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_sim_seed)]},
-        fallbacks=[CommandHandler("cancel", cancel_input)]
+        fallbacks=[CommandHandler("cancel", cancel_input)],
+        per_message=False
     )
     
     promo_user_handler = ConversationHandler(
         entry_points=[CallbackQueryHandler(activate_promo, pattern="^activate_promo$")],
         states={WAITING_FOR_PROMO_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, process_promo)]},
-        fallbacks=[CommandHandler("cancel", cancel_input)]
+        fallbacks=[CommandHandler("cancel", cancel_input)],
+        per_message=False
     )
     
     admin_promo_create_handler = ConversationHandler(
         entry_points=[CallbackQueryHandler(admin_promo_create, pattern="^admin_promo_create$")],
         states={WAITING_FOR_ADMIN_PROMO_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_promo_create_process)]},
-        fallbacks=[CommandHandler("cancel", cancel_input)]
+        fallbacks=[CommandHandler("cancel", cancel_input)],
+        per_message=False
     )
     
     admin_balance_add_handler = ConversationHandler(
         entry_points=[CallbackQueryHandler(admin_balance_add, pattern="^admin_balance_add$")],
         states={WAITING_FOR_ADMIN_USER_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_balance_add_process)]},
-        fallbacks=[CommandHandler("cancel", cancel_input)]
+        fallbacks=[CommandHandler("cancel", cancel_input)],
+        per_message=False
     )
     
     market_sell_handler = ConversationHandler(
@@ -3004,7 +3012,8 @@ def main():
                 CallbackQueryHandler(check_market_payment, pattern="^check_market_payment_")
             ]
         },
-        fallbacks=[CommandHandler("cancel", cancel_input)]
+        fallbacks=[CommandHandler("cancel", cancel_input)],
+        per_message=False
     )
     
     sim_select_handler = ConversationHandler(
@@ -3012,13 +3021,15 @@ def main():
         states={
             WAITING_FOR_SIM_OPERATOR: [CallbackQueryHandler(sim_select_operator, pattern="^sim_op_")]
         },
-        fallbacks=[CommandHandler("cancel", cancel_input)]
+        fallbacks=[CommandHandler("cancel", cancel_input)],
+        per_message=False
     )
     
     daily_bonus_handler = ConversationHandler(
         entry_points=[CallbackQueryHandler(daily_bonus_claim, pattern="^daily_bonus_claim$")],
         states={WAITING_FOR_DAILY_BONUS: []},
-        fallbacks=[CommandHandler("cancel", cancel_input)]
+        fallbacks=[CommandHandler("cancel", cancel_input)],
+        per_message=False
     )
     
     # Добавляем обработчики

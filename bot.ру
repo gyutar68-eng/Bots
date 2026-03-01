@@ -41,6 +41,8 @@ WAITING_FOR_ADMIN_PROMO_USES = 19
 WAITING_FOR_ADMIN_BAN_REASON = 20
 WAITING_FOR_ADMIN_MAILING = 21
 WAITING_FOR_ADMIN_MAILING_TEXT = 22
+WAITING_FOR_ADMIN_BALANCE_CHECK = 23
+WAITING_FOR_ADMIN_BALANCE_REMOVE = 24
 
 # Токен и канал из переменных окружения
 TOKEN = os.getenv("BOT_TOKEN")
@@ -935,26 +937,21 @@ async def clicker_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if clicks >= CLICKS_REQUIRED:
         if user_data.get('last_reward') and (datetime.now() - datetime.fromisoformat(user_data['last_reward'])).days < 7:
             reward_text = "\n⏳ Кулдаун 7 дней после получения"
+            keyboard = [
+                [InlineKeyboardButton("🖱 КЛИК!", callback_data="clicker_click")],
+                [InlineKeyboardButton("◀️ Назад в меню", callback_data="back_to_menu")]
+            ]
         else:
             reward_text = "\n🎁 Доступна награда! Нажми 'ЗАБРАТЬ'"
             keyboard = [
                 [InlineKeyboardButton("🎁 ЗАБРАТЬ НАГРАДУ", callback_data="clicker_claim")],
                 [InlineKeyboardButton("◀️ Назад в меню", callback_data="back_to_menu")]
             ]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            await query.edit_message_text(
-                f"🖱 КЛИКЕР\n\n"
-                f"Прогресс: {progress_bar}\n"
-                f"Клики: {clicks} / {CLICKS_REQUIRED} ({progress}%)\n"
-                f"{reward_text}",
-                reply_markup=reply_markup
-            )
-            return
-    
-    keyboard = [
-        [InlineKeyboardButton("🖱 КЛИК!", callback_data="clicker_click")],
-        [InlineKeyboardButton("◀️ Назад в меню", callback_data="back_to_menu")]
-    ]
+    else:
+        keyboard = [
+            [InlineKeyboardButton("🖱 КЛИК!", callback_data="clicker_click")],
+            [InlineKeyboardButton("◀️ Назад в меню", callback_data="back_to_menu")]
+        ]
     
     if user_data.get('verification_pending'):
         keyboard.insert(0, [InlineKeyboardButton("✅ ПРОВЕРКА", callback_data="clicker_verify")])
@@ -988,10 +985,14 @@ async def clicker_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_data = clicker_data[user_id]
     
     # Проверка на кулдаун после награды
-    if user_data.get('last_reward'):
-        if (datetime.now() - datetime.fromisoformat(user_data['last_reward'])).days < 7:
-            await query.answer("⏳ Кулдаун 7 дней после получения награды!", show_alert=True)
-            return
+    if user_data.get('last_reward') and (datetime.now() - datetime.fromisoformat(user_data['last_reward'])).days < 7:
+        await query.answer("⏳ Кулдаун 7 дней после получения награды!", show_alert=True)
+        return
+    
+    # Проверка на достижение цели
+    if user_data['clicks'] >= CLICKS_REQUIRED:
+        await clicker_menu(update, context)
+        return
     
     user_data['clicks'] += 1
     clicks = user_data['clicks']
@@ -1041,10 +1042,9 @@ async def clicker_claim(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_data = clicker_data[user_id]
     
     # Проверка на кулдаун
-    if user_data.get('last_reward'):
-        if (datetime.now() - datetime.fromisoformat(user_data['last_reward'])).days < 7:
-            await query.answer("⏳ Кулдаун 7 дней после получения!", show_alert=True)
-            return
+    if user_data.get('last_reward') and (datetime.now() - datetime.fromisoformat(user_data['last_reward'])).days < 7:
+        await query.answer("⏳ Кулдаун 7 дней после получения!", show_alert=True)
+        return
     
     if user_data['clicks'] < CLICKS_REQUIRED:
         await query.answer("❌ Нужно больше кликов!", show_alert=True)
@@ -1053,6 +1053,7 @@ async def clicker_claim(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Выдаем награду
     user_data['last_reward'] = datetime.now().isoformat()
     user_data['clicks'] = 0
+    user_data['verification_pending'] = False
     
     # Записываем в pending_orders для выдачи подписи
     order_id = str(uuid.uuid4())[:8]
@@ -1454,7 +1455,7 @@ async def admin_promo_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     promo_list = ""
     if promo_codes:
         promo_list = "\n📋 **Активные промокоды:**\n"
-        for name, data in promo_codes.items():
+        for name, data in list(promo_codes.items())[:5]:  # Показываем только первые 5
             promo_list += f"• {name}: {data['amount']}$ (осталось {data['uses_left']} использований)\n"
     else:
         promo_list = "\n📋 Нет активных промокодов\n"
@@ -1713,7 +1714,7 @@ async def admin_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"• Прибыль: {total_spent - total_won}$\n\n"
         f"🎲 **КЕЙСЫ:**\n"
         f"• Открыто всего: {total_cases}\n"
-        f"• Среднее на пользователя: {total_cases/total_users:.1f}\n\n"
+        f"• Среднее на пользователя: {total_cases/total_users:.1f} шт\n\n"
         f"🎁 **ПРОМОКОДЫ:**\n"
         f"• Активных: {promo_count}\n"
         f"• Осталось использований: {promo_uses}"
@@ -1761,6 +1762,290 @@ async def admin_save(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 InlineKeyboardButton("◀️ Назад", callback_data="admin_panel")
             ]])
         )
+
+# ============================================
+# АДМИН - ДОПОЛНИТЕЛЬНЫЕ ФУНКЦИИ
+# ============================================
+async def admin_promo_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    if not promo_codes:
+        await query.edit_message_text(
+            "📋 **Список промокодов**\n\nНет активных промокодов",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("◀️ Назад", callback_data="admin_promo")
+            ]])
+        )
+        return
+    
+    text = "📋 **Список промокодов**\n\n"
+    for name, data in promo_codes.items():
+        text += f"• {name}: {data['amount']}$ (осталось {data['uses_left']} использований)\n"
+        text += f"  Активировали: {len(data.get('activated_by', []))} чел\n\n"
+    
+    keyboard = [[InlineKeyboardButton("◀️ Назад", callback_data="admin_promo")]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await query.edit_message_text(text, reply_markup=reply_markup, parse_mode='Markdown')
+
+async def admin_promo_delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    if not promo_codes:
+        await query.edit_message_text(
+            "❌ Нет промокодов для удаления",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("◀️ Назад", callback_data="admin_promo")
+            ]])
+        )
+        return
+    
+    keyboard = []
+    for name in promo_codes.keys():
+        keyboard.append([InlineKeyboardButton(f"❌ {name}", callback_data=f"delete_promo_{name}")])
+    
+    keyboard.append([InlineKeyboardButton("◀️ Назад", callback_data="admin_promo")])
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await query.edit_message_text(
+        "🗑 **Удаление промокода**\n\nВыберите промокод для удаления:",
+        reply_markup=reply_markup,
+        parse_mode='Markdown'
+    )
+
+async def delete_promo_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    promo_name = query.data.replace("delete_promo_", "")
+    
+    if promo_name in promo_codes:
+        del promo_codes[promo_name]
+        await query.edit_message_text(
+            f"✅ Промокод {promo_name} удален",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("◀️ Назад", callback_data="admin_promo")
+            ]])
+        )
+    else:
+        await query.edit_message_text(
+            "❌ Промокод не найден",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("◀️ Назад", callback_data="admin_promo")
+            ]])
+        )
+
+async def admin_balance_check(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    await query.edit_message_text(
+        "🔍 **Проверка баланса**\n\nВведите ID пользователя:",
+        reply_markup=InlineKeyboardMarkup([[
+            InlineKeyboardButton("❌ Отмена", callback_data="admin_balance")
+        ]])
+    )
+    return WAITING_FOR_ADMIN_BALANCE_CHECK
+
+async def admin_balance_check_process(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        return ConversationHandler.END
+    
+    try:
+        target_id = int(update.message.text.strip())
+        
+        balance = user_balances.get(target_id, 0)
+        stats = user_stats.get(target_id, {})
+        
+        text = (
+            f"🔍 **Информация о пользователе**\n\n"
+            f"🆔 ID: {target_id}\n"
+            f"📝 Никнейм: {stats.get('nickname', 'Неизвестно')}\n"
+            f"💰 Баланс: {balance}$\n"
+            f"📊 Статус: {'⛔ Забанен' if target_id in banned_users else '✅ Активен'}\n\n"
+            f"📈 Статистика:\n"
+            f"• Открыто кейсов: {stats.get('opened_cases', 0)}\n"
+            f"• Потрачено: {stats.get('spent', 0)}$\n"
+            f"• Выиграно: {stats.get('won', 0)}$"
+        )
+        
+        await update.message.reply_text(
+            text,
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("◀️ Назад", callback_data="admin_balance")
+            ]]),
+            parse_mode='Markdown'
+        )
+    except ValueError:
+        await update.message.reply_text("❌ Неверный ID")
+    
+    return ConversationHandler.END
+
+async def admin_balance_remove(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    await query.edit_message_text(
+        "➖ **Снятие баланса**\n\nВведите ID пользователя и сумму через пробел\nПример: `123456789 5`",
+        reply_markup=InlineKeyboardMarkup([[
+            InlineKeyboardButton("❌ Отмена", callback_data="admin_balance")
+        ]])
+    )
+    return WAITING_FOR_ADMIN_BALANCE_REMOVE
+
+async def admin_balance_remove_process(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        return ConversationHandler.END
+    
+    text = update.message.text.strip()
+    parts = text.split()
+    
+    if len(parts) != 2:
+        await update.message.reply_text(
+            "❌ Неверный формат. Введите ID и сумму через пробел",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("◀️ Назад", callback_data="admin_balance")
+            ]])
+        )
+        return WAITING_FOR_ADMIN_BALANCE_REMOVE
+    
+    try:
+        target_id = int(parts[0])
+        amount = float(parts[1])
+        
+        if amount <= 0:
+            await update.message.reply_text("❌ Сумма должна быть больше 0")
+            return WAITING_FOR_ADMIN_BALANCE_REMOVE
+        
+        if target_id not in user_balances:
+            await update.message.reply_text("❌ Пользователь не найден")
+            return WAITING_FOR_ADMIN_BALANCE_REMOVE
+        
+        if user_balances[target_id] < amount:
+            await update.message.reply_text(f"❌ Недостаточно средств. Баланс: {user_balances[target_id]}$")
+            return WAITING_FOR_ADMIN_BALANCE_REMOVE
+        
+        user_balances[target_id] -= amount
+        
+        transactions.append({
+            'user_id': target_id,
+            'type': 'admin_remove',
+            'amount': amount,
+            'admin_id': ADMIN_ID,
+            'date': datetime.now().isoformat()
+        })
+        
+        await update.message.reply_text(
+            f"✅ С баланса пользователя {target_id} снято {amount}$\n"
+            f"Текущий баланс: {user_balances[target_id]}$",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("◀️ В админ-панель", callback_data="admin_panel")
+            ]])
+        )
+        
+        try:
+            await context.bot.send_message(
+                chat_id=target_id,
+                text=f"➖ Администратор снял с вашего баланса {amount}$\n"
+                     f"Текущий баланс: {user_balances[target_id]}$"
+            )
+        except:
+            pass
+        
+    except ValueError:
+        await update.message.reply_text("❌ Неверный формат чисел")
+        return WAITING_FOR_ADMIN_BALANCE_REMOVE
+    
+    return ConversationHandler.END
+
+async def admin_unban_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    if not banned_users:
+        await query.edit_message_text(
+            "📋 **Список забаненных**\n\nНет забаненных пользователей",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("◀️ Назад", callback_data="admin_ban")
+            ]])
+        )
+        return
+    
+    keyboard = []
+    for user_id in list(banned_users)[:10]:  # Показываем только первые 10
+        nickname = user_stats.get(user_id, {}).get('nickname', 'Неизвестно')
+        keyboard.append([InlineKeyboardButton(f"🔓 {user_id} ({nickname})", callback_data=f"unban_{user_id}")])
+    
+    keyboard.append([InlineKeyboardButton("◀️ Назад", callback_data="admin_ban")])
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await query.edit_message_text(
+        "🔓 **Разбан пользователей**\n\nВыберите пользователя для разбана:",
+        reply_markup=reply_markup
+    )
+
+async def unban_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    user_id = int(query.data.replace("unban_", ""))
+    
+    if user_id in banned_users:
+        banned_users.remove(user_id)
+        
+        transactions.append({
+            'user_id': user_id,
+            'type': 'unban',
+            'admin_id': ADMIN_ID,
+            'date': datetime.now().isoformat()
+        })
+        
+        await query.edit_message_text(
+            f"✅ Пользователь {user_id} разбанен",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("◀️ Назад", callback_data="admin_ban")
+            ]])
+        )
+        
+        try:
+            await context.bot.send_message(
+                chat_id=user_id,
+                text="🔓 Вы были разбанены!"
+            )
+        except:
+            pass
+    else:
+        await query.edit_message_text(
+            "❌ Пользователь не найден в списке забаненных",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("◀️ Назад", callback_data="admin_ban")
+            ]])
+        )
+
+async def admin_ban_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    if not banned_users:
+        await query.edit_message_text(
+            "📋 **Список забаненных**\n\nНет забаненных пользователей",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("◀️ Назад", callback_data="admin_ban")
+            ]])
+        )
+        return
+    
+    text = "📋 **Список забаненных пользователей**\n\n"
+    for user_id in banned_users:
+        nickname = user_stats.get(user_id, {}).get('nickname', 'Неизвестно')
+        text += f"• {user_id} ({nickname})\n"
+    
+    keyboard = [[InlineKeyboardButton("◀️ Назад", callback_data="admin_ban")]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await query.edit_message_text(text, reply_markup=reply_markup, parse_mode='Markdown')
 
 # ============================================
 # КЕЙСЫ - КАТЕГОРИИ
@@ -3046,7 +3331,7 @@ def main():
     )
     
     # Admin handlers
-    admin_balance_handler = ConversationHandler(
+    admin_balance_add_handler = ConversationHandler(
         entry_points=[CallbackQueryHandler(admin_balance_add, pattern="^admin_balance_add$")],
         states={
             WAITING_FOR_ADMIN_USER_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_balance_add_process)]
@@ -3054,7 +3339,7 @@ def main():
         fallbacks=[CommandHandler("cancel", cancel_input)]
     )
     
-    admin_promo_handler = ConversationHandler(
+    admin_promo_create_handler = ConversationHandler(
         entry_points=[CallbackQueryHandler(admin_promo_create, pattern="^admin_promo_create$")],
         states={
             WAITING_FOR_ADMIN_PROMO_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_promo_create_process)]
@@ -3062,7 +3347,7 @@ def main():
         fallbacks=[CommandHandler("cancel", cancel_input)]
     )
     
-    admin_ban_handler = ConversationHandler(
+    admin_ban_user_handler = ConversationHandler(
         entry_points=[CallbackQueryHandler(admin_ban_user, pattern="^admin_ban_user$")],
         states={
             WAITING_FOR_ADMIN_BAN_REASON: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_ban_user_process)]
@@ -3078,14 +3363,32 @@ def main():
         fallbacks=[CommandHandler("cancel", cancel_input)]
     )
     
+    admin_balance_check_handler = ConversationHandler(
+        entry_points=[CallbackQueryHandler(admin_balance_check, pattern="^admin_balance_check$")],
+        states={
+            WAITING_FOR_ADMIN_BALANCE_CHECK: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_balance_check_process)]
+        },
+        fallbacks=[CommandHandler("cancel", cancel_input)]
+    )
+    
+    admin_balance_remove_handler = ConversationHandler(
+        entry_points=[CallbackQueryHandler(admin_balance_remove, pattern="^admin_balance_remove$")],
+        states={
+            WAITING_FOR_ADMIN_BALANCE_REMOVE: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_balance_remove_process)]
+        },
+        fallbacks=[CommandHandler("cancel", cancel_input)]
+    )
+    
     app.add_handler(nickname_handler)
     app.add_handler(captcha_handler)
     app.add_handler(sim_seed_handler)
     app.add_handler(promo_user_handler)
-    app.add_handler(admin_balance_handler)
-    app.add_handler(admin_promo_handler)
-    app.add_handler(admin_ban_handler)
+    app.add_handler(admin_balance_add_handler)
+    app.add_handler(admin_promo_create_handler)
+    app.add_handler(admin_ban_user_handler)
     app.add_handler(admin_mailing_handler)
+    app.add_handler(admin_balance_check_handler)
+    app.add_handler(admin_balance_remove_handler)
     
     # Команды
     app.add_handler(CommandHandler("start", start))
@@ -3113,9 +3416,9 @@ def main():
     app.add_handler(CallbackQueryHandler(admin_save, pattern="^admin_save$"))
     app.add_handler(CallbackQueryHandler(admin_promo_list, pattern="^admin_promo_list$"))
     app.add_handler(CallbackQueryHandler(admin_promo_delete, pattern="^admin_promo_delete$"))
-    app.add_handler(CallbackQueryHandler(admin_balance_check, pattern="^admin_balance_check$"))
-    app.add_handler(CallbackQueryHandler(admin_balance_remove, pattern="^admin_balance_remove$"))
+    app.add_handler(CallbackQueryHandler(delete_promo_confirm, pattern="^delete_promo_"))
     app.add_handler(CallbackQueryHandler(admin_unban_user, pattern="^admin_unban_user$"))
+    app.add_handler(CallbackQueryHandler(unban_confirm, pattern="^unban_"))
     app.add_handler(CallbackQueryHandler(admin_ban_list, pattern="^admin_ban_list$"))
     
     # Кейсы
@@ -3138,8 +3441,6 @@ def main():
     
     # Кликер
     app.add_handler(CallbackQueryHandler(clicker_menu, pattern="^clicker_menu$"))
-    app.add_handler(CallbackQueryHandler(clicker_click, pattern="^clicker_click$"))
-    app.add_handler(CallbackQueryHandler(clicker_claim, pattern="^clicker_claim$"))
     
     # Каталог и прочее
     app.add_handler(CallbackQueryHandler(catalog, pattern="^catalog$"))

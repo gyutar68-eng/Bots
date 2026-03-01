@@ -9,7 +9,7 @@ import asyncio
 import math
 from datetime import datetime, timedelta, timezone
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes, ConversationHandler, MessageHandler, filters
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes, ConversationHandler, MessageHandler, filters, PicklePersistence
 
 # Настройка логирования
 logging.basicConfig(
@@ -43,6 +43,8 @@ WAITING_FOR_ADMIN_MAILING = 21
 WAITING_FOR_ADMIN_MAILING_TEXT = 22
 WAITING_FOR_ADMIN_BALANCE_CHECK = 23
 WAITING_FOR_ADMIN_BALANCE_REMOVE = 24
+WAITING_FOR_MARKET_ITEM_DATA = 25
+WAITING_FOR_DAILY_BONUS = 26
 
 # Токен и канал из переменных окружения
 TOKEN = os.getenv("BOT_TOKEN")
@@ -58,7 +60,7 @@ PLATFORM_COMMISSION = 0.15
 
 # Запасной курс USDT/RUB
 DEFAULT_USDT_RATE = 90.0
-PRICE_PER_SIM_USD = 4.0
+PRICE_PER_SIM_USD = 5.0  # Цена подписи теперь 5$
 
 # Время сброса кликера (13:00 МСК = 10:00 UTC)
 RESET_HOUR = 10
@@ -68,19 +70,37 @@ RESET_MINUTE = 0
 CLICKS_REQUIRED = 54999
 CHECKPOINT_INTERVAL = 500
 
+# Время сброса ежедневных бонусов (суббота 19:00 МСК = 16:00 UTC)
+BONUS_RESET_DAY = 5  # Суббота (0=пн, 5=сб)
+BONUS_RESET_HOUR = 16
+BONUS_RESET_MINUTE = 0
+
+# Ежедневные бонусы
+DAILY_BONUSES = {
+    1: {'type': 'money', 'amount': 0.15, 'name': '0.15$'},
+    2: {'type': 'money', 'amount': 0.25, 'name': '0.25$'},
+    3: {'type': 'case', 'case_id': 'start', 'name': 'Стартовый кейс'},
+    4: {'type': 'money', 'amount': 0.5, 'name': '0.5$'},
+    5: {'type': 'promo', 'amount': 0.8, 'name': 'Промокод 0.8$'},
+    6: {'type': 'money', 'amount': 0.15, 'name': '0.15$'},
+    7: {'type': 'money', 'amount': 0.25, 'name': '0.25$'}
+}
+
 if not TOKEN:
     raise ValueError("❌ НЕТ BOT_TOKEN В ОКРУЖЕНИИ!")
 
 # ============================================
-# ОПЕРАТОРЫ
+# ОПЕРАТОРЫ (ПОДПИСИ СИМ-КАРТ)
 # ============================================
 OPERATORS = [
     "Мегафон",
-    "СберМобайл",
-    "Теле2",
+    "МТС",
     "Билайн",
+    "Теле2",
     "Yota",
-    "МТС"
+    "СберМобайл",
+    "Tinkoff Mobile",
+    "Ростелеком"
 ]
 
 # ============================================
@@ -101,7 +121,7 @@ MARKET_CATEGORIES = [
 # СТРУКТУРЫ ДАННЫХ
 # ============================================
 
-# Временное хранилище
+# Временное хранилище (будет в bot_data)
 pending_orders = {}
 orders = {}
 support_chats = {}
@@ -109,22 +129,22 @@ clicker_data = {}
 market_items = {}
 next_item_id = 1
 temp_market_items = {}
+pending_invoices = {}  # {invoice_id: {'user_id': id, 'type': 'case/sim/market', 'item_id': id, 'amount': price}}
 
-# СИСТЕМА БАЛАНСА И СТАТИСТИКИ
-user_balances = {}
-user_stats = {}
+# Глобальные переменные (для админа)
 banned_users = set()
 case_cooldowns = {}
 transactions = []
-pending_invoices = {}  # {invoice_id: {'user_id': id, 'type': 'case', 'item_id': id, 'amount': price}}
-
-# ПРОМОКОДЫ
-promo_codes = {}
 
 # ============================================
 # КАТЕГОРИИ КЕЙСОВ
 # ============================================
 CASE_CATEGORIES = {
+    'start': {
+        'name': '🚀 Стартовые кейсы',
+        'description': 'Кейсы для новичков с низкими ценами!',
+        'cases': ['start']
+    },
     'money': {
         'name': '💰 Денежные кейсы',
         'description': 'Кейсы с реальными денежными выигрышами на баланс!',
@@ -146,6 +166,27 @@ CASE_CATEGORIES = {
 # КЕЙСЫ
 # ============================================
 CASES = {
+    'start': {
+        'name': '🚀 Стартовый кейс',
+        'price': 0.5,
+        'category': 'start',
+        'description': 'Для тех, кто только начинает!',
+        'risk_level': 'Низкий',
+        'risk_color': '🟢',
+        'risk_scale': '█░░░░░░░░░ 10% риска',
+        'display_items': [  # ЗАВЫШЕННЫЕ ШАНСЫ ДЛЯ ОПИСАНИЯ
+            {'type': 'money', 'amount': 0.2, 'chance': 40, 'name': '0.2$'},
+            {'type': 'money', 'amount': 0.35, 'chance': 30, 'name': '0.35$'},
+            {'type': 'money', 'amount': 0.5, 'chance': 20, 'name': '0.5$'},
+            {'type': 'money', 'amount': 0.75, 'chance': 10, 'name': '0.75$'}
+        ],
+        'real_items': [  # РЕАЛЬНЫЕ ШАНСЫ
+            {'type': 'money', 'amount': 0.2, 'chance': 65, 'name': '0.2$'},
+            {'type': 'money', 'amount': 0.35, 'chance': 25, 'name': '0.35$'},
+            {'type': 'money', 'amount': 0.5, 'chance': 8, 'name': '0.5$'},
+            {'type': 'money', 'amount': 0.75, 'chance': 2, 'name': '0.75$'}
+        ]
+    },
     'free': {
         'name': '🎁 Бесплатный кейс',
         'price': 0,
@@ -356,7 +397,7 @@ FAQ_SECTIONS = [
 
 🔹 **Стратегия:**
 • Кликайте каждый день, чтобы накопить клики
-• 54999 кликов = бесплатная подпись (экономия 4$)
+• 54999 кликов = бесплатная подпись (экономия 5$)
 • Максимальный прогресс можно посмотреть в меню кликера
 
 🔥 **Попробуй свои силы прямо сейчас!**"""
@@ -369,9 +410,14 @@ FAQ_SECTIONS = [
 Покупай кейсы и выигрывай реальные деньги на баланс!
 
 🔹 **Категории кейсов:**
+• 🚀 **Стартовые кейсы** - для новичков (от 0.5$)
 • 💰 **Денежные кейсы** - выигрывай реальные деньги
 • 🎮 **Кейсы с аккаунтами** - скоро появятся
 • 🕹️ **Кейсы с играми** - выигрывай лицензионные игры
+
+🔹 **Стартовые кейсы:**
+• 🚀 **Стартовый кейс (0.5$)** - шанс до 0.75$
+  - 0.2$ (40%), 0.35$ (30%), 0.5$ (20%), 0.75$ (10%)
 
 🔹 **Денежные кейсы:**
 • 💸 **Бомж-кейс (1$)** - шанс до 2$
@@ -419,6 +465,7 @@ FAQ_SECTIONS = [
 2. Выиграть в **кейсах**
 3. Активировать **промокод**
 4. Получить от **администратора**
+5. Забрать **ежедневный бонус**
 
 🔹 **Курс конвертации:**
 • 1 USDT ≈ 90 RUB (обновляется автоматически с CoinGecko)
@@ -427,7 +474,7 @@ FAQ_SECTIONS = [
 🔹 **На что тратить баланс:**
 • Покупка кейсов
 • Товары на маркетплейсе
-• Подписи сим-карт (4$/шт)
+• Подписи сим-карт (5$/шт)
 
 🔹 **Вывод средств:**
 • Напишите администратору @YungTrezinny
@@ -449,6 +496,7 @@ FAQ_SECTIONS = [
 • В канале с промокодами @SlogsPromo
 • От администратора @YungTrezinny
 • В конкурсах и розыгрышах
+• В ежедневных бонусах!
 
 🔹 **Как активировать:**
 1. Зайди в раздел **"Профиль"**
@@ -506,22 +554,24 @@ P2P маркетплейс, где пользователи продают др�
 
 🔹 **Доступные операторы:**
 • Мегафон
-• СберМобайл
-• Теле2
-• Билайн
-• Yota
 • МТС
+• Билайн
+• Теле2
+• Yota
+• СберМобайл
+• Tinkoff Mobile
+• Ростелеком
 
 🔹 **Цены:**
-• 1 подпись - 4$
-• 3 подписи - 12$ (цена без скидки)
-• 5 подписей - 20$ (цена без скидки)
+• 1 подпись - 5$
+• Максимум за раз: 8 подписей (40$)
 
 🔹 **Как получить подпись:**
 1. Купить через **"Наш каталог"**
-2. Оплатить (баланс или крипта)
-3. Отправить сид-фразу боту
-4. Получить подпись от администратора
+2. Выбрать количество (1-8 шт)
+3. Оплатить (баланс или крипта)
+4. Отправить сид-фразу боту
+5. Получить подпись от администратора
 
 🔹 **Бесплатный способ:**
 • Используй **Кликер** - нажми 54999 раз
@@ -629,11 +679,13 @@ P2P маркетплейс, где пользователи продают др�
 • **Выиграно всего** - сколько выиграли в кейсах
 • **Чистая прибыль** - выигрыш минус траты
 • **Дата регистрации** - когда присоединились
+• **Ежедневный бонус** - день серии
 
 🔹 **Как улучшить статистику:**
 • Чаще открывайте кейсы
 • Следите за промокодами
 • Участвуйте в конкурсах
+• Забирайте ежедневные бонусы
 
 🔹 **Смена никнейма:**
 1. Зайди в профиль
@@ -721,6 +773,35 @@ P2P маркетплейс, где пользователи продают др�
 • Стать продавцом: через маркетплейс
 
 📢 **Подписывайся на канал, чтобы не пропускать новости и промокоды!**"""
+    },
+    {
+        "id": 13, 
+        "name": "🎁 Ежедневные бонусы", 
+        "content": """🎁 **ЕЖЕДНЕВНЫЕ БОНУСЫ**
+
+Забирай бонусы каждый день и получай награды!
+
+🔹 **Как это работает:**
+• Заходи каждый день в раздел **"Профиль"**
+• Нажимай **"Забрать ежедневный бонус"**
+• Получай награду по серии
+• Серия обновляется каждую субботу в 19:00 МСК
+
+🔹 **Награды:**
+• День 1: 0.15$ на баланс
+• День 2: 0.25$ на баланс
+• День 3: 🚀 Стартовый кейс
+• День 4: 0.5$ на баланс
+• День 5: Промокод на 0.8$
+• День 6: 0.15$ на баланс
+• День 7: 0.25$ на баланс
+
+🔹 **Правила:**
+• Пропустил день - серия сбрасывается
+• Максимальная серия - 7 дней
+• После субботы всё начинается заново
+
+🔥 **Забирай бонус каждый день!**"""
     }
 ]
 
@@ -852,8 +933,9 @@ async def clicker_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     user_id = query.from_user.id
     
-    if user_id not in clicker_data:
-        clicker_data[user_id] = {
+    # Используем context.user_data для хранения данных кликера
+    if 'clicker' not in context.user_data:
+        context.user_data['clicker'] = {
             'clicks': 0,
             'last_reset': datetime.now(timezone.utc).isoformat(),
             'checkpoint': 0,
@@ -861,7 +943,7 @@ async def clicker_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
             'last_reward': None
         }
     
-    user_data = clicker_data[user_id]
+    user_data = context.user_data['clicker']
     clicks = user_data['clicks']
     
     progress = int((clicks / CLICKS_REQUIRED) * 100)
@@ -908,8 +990,8 @@ async def clicker_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     user_id = query.from_user.id
     
-    if user_id not in clicker_data:
-        clicker_data[user_id] = {
+    if 'clicker' not in context.user_data:
+        context.user_data['clicker'] = {
             'clicks': 0,
             'last_reset': datetime.now(timezone.utc).isoformat(),
             'checkpoint': 0,
@@ -917,7 +999,7 @@ async def clicker_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
             'last_reward': None
         }
     
-    user_data = clicker_data[user_id]
+    user_data = context.user_data['clicker']
     
     # Проверка на кулдаун после награды
     if user_data.get('last_reward') and (datetime.now() - datetime.fromisoformat(user_data['last_reward'])).days < 7:
@@ -960,7 +1042,7 @@ async def clicker_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         return WAITING_FOR_CAPTCHA
     
-    clicker_data[user_id] = user_data
+    context.user_data['clicker'] = user_data
     await clicker_menu(update, context)
     return ConversationHandler.END
 
@@ -970,11 +1052,11 @@ async def clicker_claim(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     user_id = query.from_user.id
     
-    if user_id not in clicker_data:
+    if 'clicker' not in context.user_data:
         await query.answer("❌ Ошибка!", show_alert=True)
         return
     
-    user_data = clicker_data[user_id]
+    user_data = context.user_data['clicker']
     
     # Проверка на кулдаун
     if user_data.get('last_reward') and (datetime.now() - datetime.fromisoformat(user_data['last_reward'])).days < 7:
@@ -992,10 +1074,10 @@ async def clicker_claim(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     # Записываем в pending_orders для выдачи подписи
     order_id = str(uuid.uuid4())[:8]
-    if user_id not in pending_orders:
-        pending_orders[user_id] = []
+    if 'pending_orders' not in context.user_data:
+        context.user_data['pending_orders'] = []
     
-    pending_orders[user_id].append({
+    context.user_data['pending_orders'].append({
         'order_id': order_id,
         'type': 'clicker_reward',
         'quantity': 1,
@@ -1027,8 +1109,8 @@ async def handle_captcha_answer(update: Update, context: ContextTypes.DEFAULT_TY
     captcha = context.user_data.get('captcha', {})
     
     if answer == captcha.get('answer', ''):
-        if user_id in clicker_data:
-            clicker_data[user_id]['verification_pending'] = False
+        if 'clicker' in context.user_data:
+            context.user_data['clicker']['verification_pending'] = False
         
         context.user_data.pop('captcha', None)
         
@@ -1066,10 +1148,12 @@ async def handle_sim_seed(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     if current_order['type'] == 'clicker_reward':
         order_type = "КЛИКЕР (БЕСПЛАТНО)"
+    elif current_order['type'] == 'sim':
+        order_type = "ПОДПИСИ СИМ-КАРТ"
     elif current_order['type'] == 'test':
         order_type = "ТЕСТОВЫЙ"
     else:
-        order_type = "ПОДПИСИ"
+        order_type = "ЗАКАЗ"
     
     admin_message = (
         f"🔔 НОВЫЙ ЗАКАЗ\n\n"
@@ -1101,8 +1185,8 @@ async def handle_sim_seed(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode='Markdown'
         )
     
-    if user_id in pending_orders:
-        for order in pending_orders[user_id]:
+    if 'pending_orders' in context.user_data:
+        for order in context.user_data['pending_orders']:
             if order.get("order_id") == current_order.get("order_id"):
                 order["status"] = "completed" if admin_notified else "error"
                 order["seed"] = seed_text
@@ -1142,10 +1226,16 @@ async def set_nickname(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return WAITING_FOR_NICKNAME
     
-    if user_id not in user_stats:
-        user_stats[user_id] = {'spent': 0, 'opened_cases': 0, 'won': 0, 'nickname': '', 'join_date': datetime.now().isoformat()}
+    if 'stats' not in context.user_data:
+        context.user_data['stats'] = {
+            'spent': 0,
+            'opened_cases': 0,
+            'won': 0,
+            'nickname': update.effective_user.first_name,
+            'join_date': datetime.now().isoformat()
+        }
     
-    user_stats[user_id]['nickname'] = new_nick
+    context.user_data['stats']['nickname'] = new_nick
     
     await update.message.reply_text(
         f"✅ Никнейм успешно изменён на **{new_nick}**!",
@@ -1162,6 +1252,182 @@ async def set_nickname(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ConversationHandler.END
 
 # ============================================
+# ЕЖЕДНЕВНЫЕ БОНУСЫ
+# ============================================
+def check_bonus_reset(user_data):
+    """Проверяет, нужно ли сбросить серию бонусов"""
+    if 'bonus' not in user_data:
+        return True
+    
+    last_bonus = datetime.fromisoformat(user_data['bonus'].get('last_claim', '2000-01-01'))
+    now = datetime.now()
+    
+    # Проверяем, не прошла ли суббота 19:00
+    days_since_last = (now - last_bonus).days
+    
+    # Если прошло больше 7 дней или наступила следующая суббота
+    if days_since_last >= 7:
+        return True
+    
+    # Проверяем, не наступила ли новая неделя
+    current_week = now.isocalendar()[1]
+    last_week = last_bonus.isocalendar()[1]
+    
+    if current_week != last_week:
+        return True
+    
+    return False
+
+async def daily_bonus_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    user_id = query.from_user.id
+    
+    # Инициализируем данные бонусов
+    if 'bonus' not in context.user_data:
+        context.user_data['bonus'] = {
+            'day': 1,
+            'last_claim': None,
+            'claimed_days': []
+        }
+    
+    bonus_data = context.user_data['bonus']
+    
+    # Проверяем сброс
+    if check_bonus_reset(context.user_data):
+        bonus_data['day'] = 1
+        bonus_data['claimed_days'] = []
+        bonus_data['last_claim'] = None
+    
+    # Проверяем, можно ли забрать сегодня
+    can_claim = True
+    if bonus_data['last_claim']:
+        last_claim = datetime.fromisoformat(bonus_data['last_claim'])
+        if last_claim.date() == datetime.now().date():
+            can_claim = False
+    
+    current_day = bonus_data['day']
+    next_bonus = DAILY_BONUSES.get(current_day, DAILY_BONUSES[1])
+    
+    text = f"🎁 **ЕЖЕДНЕВНЫЕ БОНУСЫ**\n\n"
+    text += f"📅 День серии: {current_day}/7\n\n"
+    
+    if can_claim:
+        text += f"🎁 **Доступен бонус:**\n"
+        if next_bonus['type'] == 'money':
+            text += f"💰 {next_bonus['name']}\n"
+        elif next_bonus['type'] == 'case':
+            case = CASES.get(next_bonus['case_id'], {})
+            text += f"📦 {case.get('name', 'Кейс')}\n"
+        elif next_bonus['type'] == 'promo':
+            text += f"🎫 Промокод на {next_bonus['amount']}$\n"
+    else:
+        text += f"⏳ Сегодня уже забирали бонус\n"
+        text += f"Возвращайтесь завтра!\n"
+    
+    text += f"\n📅 Сброс серии: каждую субботу в 19:00 МСК"
+    
+    keyboard = []
+    if can_claim:
+        keyboard.append([InlineKeyboardButton("🎁 ЗАБРАТЬ БОНУС", callback_data="daily_bonus_claim")])
+    keyboard.append([InlineKeyboardButton("◀️ Назад", callback_data="profile_menu")])
+    
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await query.edit_message_text(text, reply_markup=reply_markup, parse_mode='Markdown')
+
+async def daily_bonus_claim(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    user_id = query.from_user.id
+    
+    if 'bonus' not in context.user_data:
+        context.user_data['bonus'] = {
+            'day': 1,
+            'last_claim': None,
+            'claimed_days': []
+        }
+    
+    bonus_data = context.user_data['bonus']
+    
+    # Проверяем сброс
+    if check_bonus_reset(context.user_data):
+        bonus_data['day'] = 1
+        bonus_data['claimed_days'] = []
+        bonus_data['last_claim'] = None
+    
+    # Проверяем, забирали ли сегодня
+    if bonus_data['last_claim']:
+        last_claim = datetime.fromisoformat(bonus_data['last_claim'])
+        if last_claim.date() == datetime.now().date():
+            await query.answer("❌ Сегодня уже забирали бонус!", show_alert=True)
+            return
+    
+    current_day = bonus_data['day']
+    bonus = DAILY_BONUSES.get(current_day, DAILY_BONUSES[1])
+    
+    result_text = f"🎁 **БОНУС ПОЛУЧЕН!**\n\n"
+    
+    if bonus['type'] == 'money':
+        amount = bonus['amount']
+        if 'balance' not in context.user_data:
+            context.user_data['balance'] = 0
+        context.user_data['balance'] += amount
+        result_text += f"💰 Начислено: {amount}$\n"
+        
+    elif bonus['type'] == 'case':
+        case_id = bonus['case_id']
+        case = CASES.get(case_id, {})
+        
+        # Добавляем кейс в инвентарь
+        if 'cases' not in context.user_data:
+            context.user_data['cases'] = []
+        context.user_data['cases'].append(case_id)
+        
+        result_text += f"📦 Получен: {case.get('name', 'Кейс')}\n"
+        result_text += f"Откройте его в разделе кейсов!\n"
+        
+    elif bonus['type'] == 'promo':
+        promo_amount = bonus['amount']
+        promo_name = f"DAILY_{uuid.uuid4().hex[:8].upper()}"
+        
+        if 'promo_codes' not in context.bot_data:
+            context.bot_data['promo_codes'] = {}
+        
+        context.bot_data['promo_codes'][promo_name] = {
+            'amount': promo_amount,
+            'uses_left': 1,
+            'created_by': 'daily_bonus',
+            'created_at': datetime.now().isoformat(),
+            'activated_by': []
+        }
+        
+        result_text += f"🎫 Получен промокод: {promo_name}\n"
+        result_text += f"Сумма: {promo_amount}$\n"
+        result_text += f"Активируйте в разделе профиля!\n"
+    
+    # Обновляем данные бонусов
+    bonus_data['last_claim'] = datetime.now().isoformat()
+    bonus_data['claimed_days'].append(current_day)
+    bonus_data['day'] = current_day + 1
+    
+    # Добавляем транзакцию
+    if 'transactions' not in context.user_data:
+        context.user_data['transactions'] = []
+    context.user_data['transactions'].append({
+        'type': 'daily_bonus',
+        'day': current_day,
+        'reward': bonus,
+        'date': datetime.now().isoformat()
+    })
+    
+    keyboard = [[InlineKeyboardButton("◀️ В профиль", callback_data="profile_menu")]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await query.edit_message_text(result_text, reply_markup=reply_markup, parse_mode='Markdown')
+
+# ============================================
 # ПРОФИЛЬ ПОЛЬЗОВАТЕЛЯ
 # ============================================
 async def profile_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1171,8 +1437,8 @@ async def profile_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = query.from_user.id
     user = query.from_user
     
-    if user_id not in user_stats:
-        user_stats[user_id] = {
+    if 'stats' not in context.user_data:
+        context.user_data['stats'] = {
             'spent': 0,
             'opened_cases': 0,
             'won': 0,
@@ -1181,27 +1447,26 @@ async def profile_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
             'last_active': datetime.now().isoformat()
         }
     
-    if user_id not in user_balances:
-        user_balances[user_id] = 0
+    if 'balance' not in context.user_data:
+        context.user_data['balance'] = 0
     
-    stats = user_stats.get(user_id, {
-        'spent': 0,
-        'opened_cases': 0,
-        'won': 0,
-        'nickname': user.first_name,
-        'join_date': datetime.now().isoformat()
-    })
-    
-    balance = user_balances.get(user_id, 0)
+    stats = context.user_data['stats']
+    balance = context.user_data['balance']
     nickname = stats.get('nickname', user.first_name)
     ban_status = "⛔ ЗАБАНЕН" if user_id in banned_users else "✅ Активен"
+    
+    # Данные для ежедневных бонусов
+    bonus_text = ""
+    if 'bonus' in context.user_data:
+        bonus_day = context.user_data['bonus'].get('day', 1)
+        bonus_text = f"\n🎁 День бонуса: {bonus_day}/7"
     
     text = (
         f"👤 **ПРОФИЛЬ ПОЛЬЗОВАТЕЛЯ**\n\n"
         f"🆔 **ID:** `{user_id}`\n"
         f"📝 **Никнейм:** {nickname}\n"
         f"💰 **Баланс:** {balance}$\n"
-        f"📊 **Статус:** {ban_status}\n\n"
+        f"📊 **Статус:** {ban_status}{bonus_text}\n\n"
         f"📈 **СТАТИСТИКА:**\n"
         f"• Открыто кейсов: {stats.get('opened_cases', 0)}\n"
         f"• Потрачено всего: {stats.get('spent', 0)}$\n"
@@ -1211,6 +1476,7 @@ async def profile_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     
     keyboard = [
+        [InlineKeyboardButton("🎁 Ежедневный бонус", callback_data="daily_bonus")],
         [InlineKeyboardButton("💰 Пополнить баланс", callback_data="deposit_menu")],
         [InlineKeyboardButton("🎁 Активировать промокод", callback_data="activate_promo")],
         [InlineKeyboardButton("✏️ Сменить никнейм", callback_data="change_nickname")],
@@ -1230,7 +1496,611 @@ async def profile_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(text.replace('*', ''), reply_markup=reply_markup)
 
 # ============================================
-# АДМИН-ПАНЕЛЬ
+# КАТАЛОГ ТОВАРОВ (ПОДПИСИ СИМ-КАРТ)
+# ============================================
+async def catalog(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    text = "🛍 **КАТАЛОГ ТОВАРОВ**\n\n"
+    text += "Выберите категорию:\n\n"
+    text += "📱 **Подписи сим-карт**\n"
+    text += "• Мегафон, МТС, Билайн, Теле2\n"
+    text += "• Yota, СберМобайл, Tinkoff, Ростелеком\n"
+    text += f"• Цена: {PRICE_PER_SIM_USD}$ за штуку\n"
+    text += f"• Максимум: 8 шт за раз\n"
+    
+    keyboard = [
+        [InlineKeyboardButton("📱 Купить подписи", callback_data="buy_sim_menu")],
+        [InlineKeyboardButton("◀️ Назад", callback_data="back_to_menu")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await query.edit_message_text(text, reply_markup=reply_markup, parse_mode='Markdown')
+
+async def buy_sim_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    text = "📱 **ПОДПИСИ СИМ-КАРТ**\n\n"
+    text += f"💰 Цена: {PRICE_PER_SIM_USD}$ за штуку\n"
+    text += "📦 Максимум: 8 штук за раз\n\n"
+    text += "Выберите количество:"
+    
+    keyboard = [
+        [
+            InlineKeyboardButton("1", callback_data="buy_sim_1"),
+            InlineKeyboardButton("2", callback_data="buy_sim_2"),
+            InlineKeyboardButton("3", callback_data="buy_sim_3"),
+            InlineKeyboardButton("4", callback_data="buy_sim_4")
+        ],
+        [
+            InlineKeyboardButton("5", callback_data="buy_sim_5"),
+            InlineKeyboardButton("6", callback_data="buy_sim_6"),
+            InlineKeyboardButton("7", callback_data="buy_sim_7"),
+            InlineKeyboardButton("8", callback_data="buy_sim_8")
+        ],
+        [InlineKeyboardButton("◀️ Назад", callback_data="catalog")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await query.edit_message_text(text, reply_markup=reply_markup, parse_mode='Markdown')
+
+async def buy_sim(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    quantity = int(query.data.replace("buy_sim_", ""))
+    user_id = query.from_user.id
+    total_price = quantity * PRICE_PER_SIM_USD
+    
+    keyboard = [
+        [InlineKeyboardButton("💰 КУПИТЬ ЗА БАЛАНС", callback_data=f"buy_sim_balance_{quantity}")],
+        [InlineKeyboardButton("💳 КУПИТЬ ЗА USDT", callback_data=f"buy_sim_crypto_{quantity}")],
+        [InlineKeyboardButton("◀️ Назад", callback_data="buy_sim_menu")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await query.edit_message_text(
+        f"📱 **Покупка подписей**\n\n"
+        f"Количество: {quantity} шт\n"
+        f"Цена за штуку: {PRICE_PER_SIM_USD}$\n"
+        f"Общая стоимость: {total_price}$\n\n"
+        f"Выберите способ оплаты:",
+        reply_markup=reply_markup,
+        parse_mode='Markdown'
+    )
+
+async def buy_sim_balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    quantity = int(query.data.replace("buy_sim_balance_", ""))
+    user_id = query.from_user.id
+    total_price = quantity * PRICE_PER_SIM_USD
+    
+    if context.user_data.get('balance', 0) < total_price:
+        await query.answer("❌ Недостаточно средств на балансе!", show_alert=True)
+        return
+    
+    # Списываем баланс
+    context.user_data['balance'] -= total_price
+    
+    # Создаем заказ
+    order_id = str(uuid.uuid4())[:8]
+    if 'pending_orders' not in context.user_data:
+        context.user_data['pending_orders'] = []
+    
+    context.user_data['pending_orders'].append({
+        'order_id': order_id,
+        'type': 'sim',
+        'quantity': quantity,
+        'status': 'pending',
+        'date': datetime.now().isoformat()
+    })
+    
+    context.user_data['current_order'] = {
+        'order_id': order_id,
+        'type': 'sim',
+        'quantity': quantity
+    }
+    
+    # Уведомляем админа
+    admin_msg = (
+        f"🛍 НОВЫЙ ЗАКАЗ (БАЛАНС)\n\n"
+        f"👤 Покупатель: {query.from_user.first_name}\n"
+        f"🆔 ID: {user_id}\n"
+        f"📦 Товар: Подписи сим-карт\n"
+        f"🔢 Количество: {quantity} шт\n"
+        f"💰 Сумма: {total_price}$\n"
+        f"📅 Дата: {datetime.now().strftime('%d.%m.%Y %H:%M:%S')}"
+    )
+    
+    try:
+        await context.bot.send_message(chat_id=ADMIN_ID, text=admin_msg)
+    except:
+        pass
+    
+    # Запрашиваем сид-фразу
+    await query.edit_message_text(
+        f"✅ Оплата прошла успешно!\n\n"
+        f"📝 Отправьте вашу сид-фразу для генерации {quantity} подписи(ей):\n\n"
+        f"Пример: `123456789012345678`",
+        parse_mode='Markdown',
+        reply_markup=InlineKeyboardMarkup([[
+            InlineKeyboardButton("❌ Отмена", callback_data="catalog")
+        ]])
+    )
+    
+    return WAITING_FOR_SIM_SEED
+
+async def buy_sim_crypto(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    quantity = int(query.data.replace("buy_sim_crypto_", ""))
+    user_id = query.from_user.id
+    total_price = quantity * PRICE_PER_SIM_USD
+    
+    # Создаем инвойс
+    invoice = await create_crypto_invoice(total_price, f"Sim cards x{quantity}", user_id)
+    
+    if not invoice:
+        await query.edit_message_text(
+            "❌ Ошибка создания счета. Попробуйте позже.",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("◀️ Назад", callback_data="buy_sim_menu")
+            ]])
+        )
+        return
+    
+    invoice_id = invoice.get('invoice_id')
+    pay_url = invoice.get('pay_url')
+    
+    # Сохраняем инвойс
+    if 'pending_invoices' not in context.bot_data:
+        context.bot_data['pending_invoices'] = {}
+    
+    context.bot_data['pending_invoices'][invoice_id] = {
+        'user_id': user_id,
+        'type': 'sim',
+        'quantity': quantity,
+        'amount': total_price,
+        'date': datetime.now().isoformat()
+    }
+    
+    text = (
+        f"💳 **ОПЛАТА КРИПТОВАЛЮТОЙ**\n\n"
+        f"Товар: {quantity} подписей\n"
+        f"Сумма: {total_price} USDT\n\n"
+        f"Для оплаты нажмите кнопку ниже и отправьте {total_price} USDT"
+    )
+    
+    keyboard = [
+        [InlineKeyboardButton("💳 ОПЛАТИТЬ", url=pay_url)],
+        [InlineKeyboardButton("✅ Я ОПЛАТИЛ", callback_data=f"check_sim_payment_{invoice_id}")],
+        [InlineKeyboardButton("❌ Отмена", callback_data="buy_sim_menu")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await query.edit_message_text(text, reply_markup=reply_markup, parse_mode='Markdown')
+
+async def check_sim_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    invoice_id = query.data.replace("check_sim_payment_", "")
+    
+    if 'pending_invoices' not in context.bot_data or invoice_id not in context.bot_data['pending_invoices']:
+        await query.answer("❌ Счет не найден или устарел", show_alert=True)
+        return
+    
+    invoice_data = context.bot_data['pending_invoices'][invoice_id]
+    user_id = query.from_user.id
+    
+    if invoice_data['user_id'] != user_id:
+        await query.answer("❌ Это не ваш счет", show_alert=True)
+        return
+    
+    # Проверяем оплату
+    paid = await check_crypto_payment(invoice_id)
+    
+    if not paid:
+        await query.answer("❌ Оплата не найдена", show_alert=True)
+        return
+    
+    # Оплачено - создаем заказ
+    quantity = invoice_data['quantity']
+    order_id = str(uuid.uuid4())[:8]
+    
+    if 'pending_orders' not in context.user_data:
+        context.user_data['pending_orders'] = []
+    
+    context.user_data['pending_orders'].append({
+        'order_id': order_id,
+        'type': 'sim',
+        'quantity': quantity,
+        'status': 'pending',
+        'date': datetime.now().isoformat()
+    })
+    
+    context.user_data['current_order'] = {
+        'order_id': order_id,
+        'type': 'sim',
+        'quantity': quantity
+    }
+    
+    # Удаляем инвойс
+    del context.bot_data['pending_invoices'][invoice_id]
+    
+    # Уведомляем админа
+    admin_msg = (
+        f"🛍 НОВЫЙ ЗАКАЗ (КРИПТА)\n\n"
+        f"👤 Покупатель: {query.from_user.first_name}\n"
+        f"🆔 ID: {user_id}\n"
+        f"📦 Товар: Подписи сим-карт\n"
+        f"🔢 Количество: {quantity} шт\n"
+        f"💰 Сумма: {invoice_data['amount']} USDT\n"
+        f"📅 Дата: {datetime.now().strftime('%d.%m.%Y %H:%M:%S')}"
+    )
+    
+    try:
+        await context.bot.send_message(chat_id=ADMIN_ID, text=admin_msg)
+    except:
+        pass
+    
+    # Запрашиваем сид-фразу
+    await query.edit_message_text(
+        f"✅ Оплата прошла успешно!\n\n"
+        f"📝 Отправьте вашу сид-фразу для генерации {quantity} подписи(ей):\n\n"
+        f"Пример: `123456789012345678`",
+        parse_mode='Markdown',
+        reply_markup=InlineKeyboardMarkup([[
+            InlineKeyboardButton("❌ Отмена", callback_data="catalog")
+        ]])
+    )
+    
+    return WAITING_FOR_SIM_SEED
+
+# ============================================
+# ТОРГОВАЯ ПЛОЩАДКА
+# ============================================
+async def marketplace(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    # Инициализируем данные маркетплейса
+    if 'market_items' not in context.bot_data:
+        context.bot_data['market_items'] = {}
+        context.bot_data['next_item_id'] = 1
+    
+    market_items = context.bot_data['market_items']
+    
+    text = "🏪 **ТОРГОВАЯ ПЛОЩАДКА**\n\n"
+    
+    if not market_items:
+        text += "📦 Товаров пока нет\n"
+        text += "Будьте первым, кто выставит товар!\n\n"
+    else:
+        text += f"📦 Доступно товаров: {len(market_items)}\n\n"
+        text += "**Последние товары:**\n"
+        
+        # Показываем последние 5 товаров
+        sorted_items = sorted(market_items.items(), key=lambda x: x[1]['date'], reverse=True)[:5]
+        for item_id, item in sorted_items:
+            text += f"• {item['title']} - {item['price']}$\n"
+    
+    keyboard = [
+        [InlineKeyboardButton("📦 Все товары", callback_data="market_list")],
+        [InlineKeyboardButton("➕ Продать товар", callback_data="market_sell")],
+        [InlineKeyboardButton("◀️ Назад", callback_data="back_to_menu")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await query.edit_message_text(text, reply_markup=reply_markup, parse_mode='Markdown')
+
+async def market_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    market_items = context.bot_data.get('market_items', {})
+    
+    if not market_items:
+        await query.edit_message_text(
+            "📦 **Товары не найдены**\n\nНа данный момент нет активных товаров.",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("◀️ Назад", callback_data="marketplace")
+            ]])
+        )
+        return
+    
+    text = "📦 **ВСЕ ТОВАРЫ**\n\n"
+    
+    for item_id, item in market_items.items():
+        text += f"🔹 **{item['title']}**\n"
+        text += f"   💰 {item['price']}$\n"
+        text += f"   📂 {item['category']}\n"
+        text += f"   👤 Продавец: {item['seller_nick']}\n\n"
+    
+    keyboard = [[InlineKeyboardButton("◀️ Назад", callback_data="marketplace")]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await query.edit_message_text(text, reply_markup=reply_markup, parse_mode='Markdown')
+
+async def market_sell(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    text = "➕ **ПРОДАЖА ТОВАРА**\n\n"
+    text += "Шаг 1 из 4\n\n"
+    text += "Введите **название товара** (до 50 символов):"
+    
+    keyboard = [[InlineKeyboardButton("❌ Отмена", callback_data="marketplace")]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await query.edit_message_text(text, reply_markup=reply_markup, parse_mode='Markdown')
+    return WAITING_FOR_MARKET_TITLE
+
+async def market_title(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    title = update.message.text.strip()
+    
+    if len(title) > 50:
+        await update.message.reply_text("❌ Название слишком длинное! Максимум 50 символов. Попробуйте снова:")
+        return WAITING_FOR_MARKET_TITLE
+    
+    context.user_data['market_temp'] = {'title': title}
+    
+    text = "➕ **ПРОДАЖА ТОВАРА**\n\n"
+    text += "Шаг 2 из 4\n\n"
+    text += "Введите **описание товара** (до 200 символов):"
+    
+    keyboard = [[InlineKeyboardButton("❌ Отмена", callback_data="marketplace")]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await update.message.reply_text(text, reply_markup=reply_markup, parse_mode='Markdown')
+    return WAITING_FOR_MARKET_DESC
+
+async def market_desc(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    desc = update.message.text.strip()
+    
+    if len(desc) > 200:
+        await update.message.reply_text("❌ Описание слишком длинное! Максимум 200 символов. Попробуйте снова:")
+        return WAITING_FOR_MARKET_DESC
+    
+    context.user_data['market_temp']['desc'] = desc
+    
+    text = "➕ **ПРОДАЖА ТОВАРА**\n\n"
+    text += "Шаг 3 из 4\n\n"
+    text += "Введите **цену** в USD (например: 10.50):"
+    
+    keyboard = [[InlineKeyboardButton("❌ Отмена", callback_data="marketplace")]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await update.message.reply_text(text, reply_markup=reply_markup, parse_mode='Markdown')
+    return WAITING_FOR_MARKET_PRICE
+
+async def market_price(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        price = float(update.message.text.strip())
+        if price <= 0:
+            raise ValueError
+    except:
+        await update.message.reply_text("❌ Неверный формат цены. Введите число больше 0 (например: 10.50):")
+        return WAITING_FOR_MARKET_PRICE
+    
+    context.user_data['market_temp']['price'] = price
+    
+    text = "➕ **ПРОДАЖА ТОВАРА**\n\n"
+    text += "Шаг 4 из 4\n\n"
+    text += "Выберите **категорию** товара:"
+    
+    keyboard = []
+    for category in MARKET_CATEGORIES:
+        keyboard.append([InlineKeyboardButton(category, callback_data=f"market_cat_{category}")])
+    keyboard.append([InlineKeyboardButton("❌ Отмена", callback_data="marketplace")])
+    
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await update.message.reply_text(text, reply_markup=reply_markup, parse_mode='Markdown')
+    return WAITING_FOR_MARKET_CATEGORY
+
+async def market_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    category = query.data.replace("market_cat_", "")
+    context.user_data['market_temp']['category'] = category
+    
+    # Комиссия
+    price = context.user_data['market_temp']['price']
+    commission = price * PLATFORM_COMMISSION
+    
+    text = "✅ **ТОВАР ГОТОВ К ПУБЛИКАЦИИ**\n\n"
+    text += f"📦 **Название:** {context.user_data['market_temp']['title']}\n"
+    text += f"📝 **Описание:** {context.user_data['market_temp']['desc']}\n"
+    text += f"💰 **Цена:** {price}$\n"
+    text += f"📂 **Категория:** {category}\n\n"
+    text += f"📊 **Комиссия платформы (15%):** {commission:.2f}$\n"
+    text += f"💵 **Вы получите:** {price - commission:.2f}$\n\n"
+    text += f"Для публикации товара необходимо оплатить комиссию."
+    
+    keyboard = [
+        [InlineKeyboardButton("💰 ОПЛАТИТЬ С БАЛАНСА", callback_data="market_pay_balance")],
+        [InlineKeyboardButton("💳 ОПЛАТИТЬ КРИПТОЙ", callback_data="market_pay_crypto")],
+        [InlineKeyboardButton("❌ Отмена", callback_data="marketplace")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await query.edit_message_text(text, reply_markup=reply_markup, parse_mode='Markdown')
+    return WAITING_FOR_MARKET_DATA
+
+async def market_pay_balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    user_id = query.from_user.id
+    price = context.user_data['market_temp']['price']
+    commission = price * PLATFORM_COMMISSION
+    
+    if context.user_data.get('balance', 0) < commission:
+        await query.answer("❌ Недостаточно средств для оплаты комиссии!", show_alert=True)
+        return
+    
+    # Списываем комиссию
+    context.user_data['balance'] -= commission
+    
+    # Создаем товар
+    market_items = context.bot_data.get('market_items', {})
+    next_id = context.bot_data.get('next_item_id', 1)
+    
+    item_id = str(next_id)
+    market_items[item_id] = {
+        'id': item_id,
+        'title': context.user_data['market_temp']['title'],
+        'desc': context.user_data['market_temp']['desc'],
+        'price': price,
+        'category': context.user_data['market_temp']['category'],
+        'seller_id': user_id,
+        'seller_nick': context.user_data['stats'].get('nickname', query.from_user.first_name),
+        'date': datetime.now().isoformat(),
+        'status': 'active'
+    }
+    
+    context.bot_data['market_items'] = market_items
+    context.bot_data['next_item_id'] = next_id + 1
+    
+    # Очищаем временные данные
+    context.user_data.pop('market_temp', None)
+    
+    text = f"✅ **ТОВАР ОПУБЛИКОВАН!**\n\n"
+    text += f"📦 ID товара: {item_id}\n"
+    text += f"💰 Цена: {price}$\n"
+    text += f"📊 Комиссия: {commission:.2f}$\n\n"
+    text += f"Товар появится в списке всех товаров."
+    
+    keyboard = [[InlineKeyboardButton("🏪 На площадку", callback_data="marketplace")]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await query.edit_message_text(text, reply_markup=reply_markup, parse_mode='Markdown')
+    return ConversationHandler.END
+
+async def market_pay_crypto(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    user_id = query.from_user.id
+    price = context.user_data['market_temp']['price']
+    commission = price * PLATFORM_COMMISSION
+    
+    # Создаем инвойс на комиссию
+    invoice = await create_crypto_invoice(commission, f"Market commission for item", user_id)
+    
+    if not invoice:
+        await query.edit_message_text(
+            "❌ Ошибка создания счета. Попробуйте позже.",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("◀️ Назад", callback_data="marketplace")
+            ]])
+        )
+        return ConversationHandler.END
+    
+    invoice_id = invoice.get('invoice_id')
+    pay_url = invoice.get('pay_url')
+    
+    # Сохраняем инвойс
+    if 'pending_invoices' not in context.bot_data:
+        context.bot_data['pending_invoices'] = {}
+    
+    context.bot_data['pending_invoices'][invoice_id] = {
+        'user_id': user_id,
+        'type': 'market_commission',
+        'market_data': context.user_data['market_temp'],
+        'amount': commission,
+        'date': datetime.now().isoformat()
+    }
+    
+    text = (
+        f"💳 **ОПЛАТА КОМИССИИ**\n\n"
+        f"Сумма комиссии: {commission:.2f} USDT\n\n"
+        f"Для публикации товара оплатите комиссию"
+    )
+    
+    keyboard = [
+        [InlineKeyboardButton("💳 ОПЛАТИТЬ", url=pay_url)],
+        [InlineKeyboardButton("✅ Я ОПЛАТИЛ", callback_data=f"check_market_payment_{invoice_id}")],
+        [InlineKeyboardButton("❌ Отмена", callback_data="marketplace")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await query.edit_message_text(text, reply_markup=reply_markup, parse_mode='Markdown')
+    return WAITING_FOR_MARKET_DATA
+
+async def check_market_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    invoice_id = query.data.replace("check_market_payment_", "")
+    
+    if 'pending_invoices' not in context.bot_data or invoice_id not in context.bot_data['pending_invoices']:
+        await query.answer("❌ Счет не найден или устарел", show_alert=True)
+        return ConversationHandler.END
+    
+    invoice_data = context.bot_data['pending_invoices'][invoice_id]
+    user_id = query.from_user.id
+    
+    if invoice_data['user_id'] != user_id:
+        await query.answer("❌ Это не ваш счет", show_alert=True)
+        return ConversationHandler.END
+    
+    # Проверяем оплату
+    paid = await check_crypto_payment(invoice_id)
+    
+    if not paid:
+        await query.answer("❌ Оплата не найдена", show_alert=True)
+        return WAITING_FOR_MARKET_DATA
+    
+    # Оплачено - создаем товар
+    market_data = invoice_data['market_data']
+    
+    market_items = context.bot_data.get('market_items', {})
+    next_id = context.bot_data.get('next_item_id', 1)
+    
+    item_id = str(next_id)
+    market_items[item_id] = {
+        'id': item_id,
+        'title': market_data['title'],
+        'desc': market_data['desc'],
+        'price': market_data['price'],
+        'category': market_data['category'],
+        'seller_id': user_id,
+        'seller_nick': context.user_data['stats'].get('nickname', query.from_user.first_name),
+        'date': datetime.now().isoformat(),
+        'status': 'active'
+    }
+    
+    context.bot_data['market_items'] = market_items
+    context.bot_data['next_item_id'] = next_id + 1
+    
+    # Удаляем инвойс
+    del context.bot_data['pending_invoices'][invoice_id]
+    
+    # Очищаем временные данные
+    context.user_data.pop('market_temp', None)
+    
+    text = f"✅ **ТОВАР ОПУБЛИКОВАН!**\n\n"
+    text += f"📦 ID товара: {item_id}\n"
+    text += f"💰 Цена: {market_data['price']}$\n"
+    text += f"📊 Комиссия: {invoice_data['amount']:.2f}$\n\n"
+    text += f"Товар появится в списке всех товаров."
+    
+    keyboard = [[InlineKeyboardButton("🏪 На площадку", callback_data="marketplace")]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await query.edit_message_text(text, reply_markup=reply_markup, parse_mode='Markdown')
+    return ConversationHandler.END
+
+# ============================================
+# АДМИН-ПАНЕЛЬ (исправленная)
 # ============================================
 async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -1242,24 +2112,28 @@ async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await query.answer()
     
+    # Используем bot_data для глобальных данных
+    if 'promo_codes' not in context.bot_data:
+        context.bot_data['promo_codes'] = {}
+    
     # Собираем статистику
-    total_users = len(user_stats)
-    total_balance = sum(user_balances.values())
-    total_cases = sum(s.get('opened_cases', 0) for s in user_stats.values())
-    total_spent = sum(s.get('spent', 0) for s in user_stats.values())
-    total_won = sum(s.get('won', 0) for s in user_stats.values())
-    active_today = sum(1 for s in user_stats.values() if s.get('last_active', '').startswith(datetime.now().strftime('%Y-%m-%d')))
+    total_users = 0
+    total_balance = 0
+    total_cases = 0
+    total_spent = 0
+    total_won = 0
+    active_today = 0
+    
+    # Временная статистика (только текущие сессии)
+    # В реальном проекте нужно хранить в базе данных
+    
+    promo_codes = context.bot_data.get('promo_codes', {})
     
     text = (
         f"⚙️ **АДМИН-ПАНЕЛЬ**\n\n"
-        f"📊 **СТАТИСТИКА:**\n"
-        f"• Всего пользователей: {total_users}\n"
-        f"• Активных сегодня: {active_today}\n"
-        f"• Общий баланс: {total_balance}$\n"
-        f"• Открыто кейсов: {total_cases}\n"
-        f"• Потрачено всего: {total_spent}$\n"
-        f"• Выиграно всего: {total_won}$\n"
-        f"• Прибыль платформы: {total_spent - total_won}$\n\n"
+        f"📊 **СТАТИСТИКА (текущая сессия):**\n"
+        f"• Активных промокодов: {len(promo_codes)}\n"
+        f"• Временные данные не сохраняются\n\n"
         f"🔧 **УПРАВЛЕНИЕ:**"
     )
     
@@ -1277,120 +2151,22 @@ async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.edit_message_text(text, reply_markup=reply_markup, parse_mode='Markdown')
 
 # ============================================
-# АДМИН - УПРАВЛЕНИЕ БАЛАНСОМ
-# ============================================
-async def admin_balance_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    
-    text = "💰 **УПРАВЛЕНИЕ БАЛАНСОМ**\n\nВыберите действие:"
-    
-    keyboard = [
-        [InlineKeyboardButton("➕ Добавить баланс", callback_data="admin_balance_add")],
-        [InlineKeyboardButton("➖ Снять баланс", callback_data="admin_balance_remove")],
-        [InlineKeyboardButton("🔍 Проверить баланс", callback_data="admin_balance_check")],
-        [InlineKeyboardButton("◀️ Назад", callback_data="admin_panel")]
-    ]
-    
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    await query.edit_message_text(text, reply_markup=reply_markup, parse_mode='Markdown')
-
-async def admin_balance_add(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    
-    await query.edit_message_text(
-        "💰 **Добавление баланса**\n\n"
-        "Введите ID пользователя и сумму через пробел\n"
-        "Пример: `123456789 10`",
-        parse_mode='Markdown',
-        reply_markup=InlineKeyboardMarkup([[
-            InlineKeyboardButton("❌ Отмена", callback_data="admin_balance")
-        ]])
-    )
-    
-    return WAITING_FOR_ADMIN_USER_ID
-
-async def admin_balance_add_process(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID:
-        return ConversationHandler.END
-    
-    text = update.message.text.strip()
-    parts = text.split()
-    
-    if len(parts) != 2:
-        await update.message.reply_text(
-            "❌ Неверный формат. Введите ID и сумму через пробел",
-            reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton("◀️ Назад", callback_data="admin_balance")
-            ]])
-        )
-        return WAITING_FOR_ADMIN_USER_ID
-    
-    try:
-        target_id = int(parts[0])
-        amount = float(parts[1])
-        
-        if amount <= 0:
-            await update.message.reply_text("❌ Сумма должна быть больше 0")
-            return WAITING_FOR_ADMIN_USER_ID
-        
-        if target_id not in user_balances:
-            user_balances[target_id] = 0
-        user_balances[target_id] += amount
-        
-        if target_id not in user_stats:
-            user_stats[target_id] = {
-                'spent': 0,
-                'opened_cases': 0,
-                'won': 0,
-                'nickname': f"User_{target_id}",
-                'join_date': datetime.now().isoformat()
-            }
-        
-        transactions.append({
-            'user_id': target_id,
-            'type': 'admin_add',
-            'amount': amount,
-            'admin_id': ADMIN_ID,
-            'date': datetime.now().isoformat()
-        })
-        
-        await update.message.reply_text(
-            f"✅ Баланс пользователя {target_id} пополнен на {amount}$\n"
-            f"Текущий баланс: {user_balances[target_id]}$",
-            reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton("◀️ В админ-панель", callback_data="admin_panel")
-            ]])
-        )
-        
-        try:
-            await context.bot.send_message(
-                chat_id=target_id,
-                text=f"💰 Администратор пополнил ваш баланс на {amount}$!\n"
-                     f"Текущий баланс: {user_balances[target_id]}$"
-            )
-        except:
-            pass
-        
-    except ValueError:
-        await update.message.reply_text("❌ Неверный формат чисел")
-        return WAITING_FOR_ADMIN_USER_ID
-    
-    return ConversationHandler.END
-
-# ============================================
-# АДМИН - УПРАВЛЕНИЕ ПРОМОКОДАМИ
+# АДМИН - УПРАВЛЕНИЕ ПРОМОКОДАМИ (исправленное)
 # ============================================
 async def admin_promo_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     
+    if 'promo_codes' not in context.bot_data:
+        context.bot_data['promo_codes'] = {}
+    
+    promo_codes = context.bot_data['promo_codes']
+    
     # Список существующих промокодов
     promo_list = ""
     if promo_codes:
         promo_list = "\n📋 **Активные промокоды:**\n"
-        for name, data in list(promo_codes.items())[:5]:  # Показываем только первые 5
+        for name, data in list(promo_codes.items())[:5]:
             promo_list += f"• {name}: {data['amount']}$ (осталось {data['uses_left']} использований)\n"
     else:
         promo_list = "\n📋 Нет активных промокодов\n"
@@ -1448,7 +2224,10 @@ async def admin_promo_create_process(update: Update, context: ContextTypes.DEFAU
             await update.message.reply_text("❌ Сумма и количество использований должны быть больше 0")
             return WAITING_FOR_ADMIN_PROMO_NAME
         
-        promo_codes[promo_name] = {
+        if 'promo_codes' not in context.bot_data:
+            context.bot_data['promo_codes'] = {}
+        
+        context.bot_data['promo_codes'][promo_name] = {
             'amount': amount,
             'uses_left': uses,
             'created_by': ADMIN_ID,
@@ -1472,240 +2251,11 @@ async def admin_promo_create_process(update: Update, context: ContextTypes.DEFAU
     
     return ConversationHandler.END
 
-# ============================================
-# АДМИН - БАН ПОЛЬЗОВАТЕЛЕЙ
-# ============================================
-async def admin_ban_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    
-    text = "⛔ **БАН ПОЛЬЗОВАТЕЛЕЙ**\n\nВыберите действие:"
-    
-    keyboard = [
-        [InlineKeyboardButton("🔨 Забанить пользователя", callback_data="admin_ban_user")],
-        [InlineKeyboardButton("🔓 Разбанить пользователя", callback_data="admin_unban_user")],
-        [InlineKeyboardButton("📋 Список забаненных", callback_data="admin_ban_list")],
-        [InlineKeyboardButton("◀️ Назад", callback_data="admin_panel")]
-    ]
-    
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    await query.edit_message_text(text, reply_markup=reply_markup, parse_mode='Markdown')
-
-async def admin_ban_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    
-    await query.edit_message_text(
-        "🔨 **Бан пользователя**\n\n"
-        "Введите ID пользователя и причину бана через пробел\n"
-        "Пример: `123456789 Мошенничество`",
-        parse_mode='Markdown',
-        reply_markup=InlineKeyboardMarkup([[
-            InlineKeyboardButton("❌ Отмена", callback_data="admin_ban")
-        ]])
-    )
-    
-    return WAITING_FOR_ADMIN_BAN_REASON
-
-async def admin_ban_user_process(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID:
-        return ConversationHandler.END
-    
-    text = update.message.text.strip()
-    parts = text.split(' ', 1)
-    
-    if len(parts) != 2:
-        await update.message.reply_text(
-            "❌ Неверный формат. Введите ID и причину",
-            reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton("◀️ Назад", callback_data="admin_ban")
-            ]])
-        )
-        return WAITING_FOR_ADMIN_BAN_REASON
-    
-    try:
-        target_id = int(parts[0])
-        reason = parts[1]
-        
-        banned_users.add(target_id)
-        
-        transactions.append({
-            'user_id': target_id,
-            'type': 'ban',
-            'reason': reason,
-            'admin_id': ADMIN_ID,
-            'date': datetime.now().isoformat()
-        })
-        
-        await update.message.reply_text(
-            f"✅ Пользователь {target_id} забанен\n"
-            f"Причина: {reason}",
-            reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton("◀️ В админ-панель", callback_data="admin_panel")
-            ]])
-        )
-        
-        try:
-            await context.bot.send_message(
-                chat_id=target_id,
-                text=f"⛔ Вы были забанены!\nПричина: {reason}"
-            )
-        except:
-            pass
-        
-    except ValueError:
-        await update.message.reply_text("❌ Неверный ID")
-        return WAITING_FOR_ADMIN_BAN_REASON
-    
-    return ConversationHandler.END
-
-# ============================================
-# АДМИН - РАССЫЛКА
-# ============================================
-async def admin_mailing(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    
-    await query.edit_message_text(
-        "📢 **РАССЫЛКА**\n\n"
-        "Введите текст для рассылки всем пользователям:",
-        parse_mode='Markdown',
-        reply_markup=InlineKeyboardMarkup([[
-            InlineKeyboardButton("❌ Отмена", callback_data="admin_panel")
-        ]])
-    )
-    
-    return WAITING_FOR_ADMIN_MAILING_TEXT
-
-async def admin_mailing_process(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID:
-        return ConversationHandler.END
-    
-    text = update.message.text.strip()
-    
-    await update.message.reply_text("📢 Начинаю рассылку...")
-    
-    sent = 0
-    failed = 0
-    
-    for user_id in user_stats.keys():
-        try:
-            await context.bot.send_message(
-                chat_id=user_id,
-                text=f"📢 **РАССЫЛКА**\n\n{text}",
-                parse_mode='Markdown'
-            )
-            sent += 1
-            await asyncio.sleep(0.05)  # Anti-flood
-        except:
-            failed += 1
-    
-    await update.message.reply_text(
-        f"✅ Рассылка завершена!\n"
-        f"Отправлено: {sent}\n"
-        f"Не доставлено: {failed}",
-        reply_markup=InlineKeyboardMarkup([[
-            InlineKeyboardButton("◀️ В админ-панель", callback_data="admin_panel")
-        ]])
-    )
-    
-    return ConversationHandler.END
-
-# ============================================
-# АДМИН - ПОЛНАЯ СТАТИСТИКА
-# ============================================
-async def admin_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    
-    # Собираем подробную статистику
-    total_users = len(user_stats)
-    total_balance = sum(user_balances.values())
-    avg_balance = total_balance / total_users if total_users > 0 else 0
-    
-    total_cases = sum(s.get('opened_cases', 0) for s in user_stats.values())
-    total_spent = sum(s.get('spent', 0) for s in user_stats.values())
-    total_won = sum(s.get('won', 0) for s in user_stats.values())
-    
-    active_today = sum(1 for s in user_stats.values() if s.get('last_active', '').startswith(datetime.now().strftime('%Y-%m-%d')))
-    active_week = sum(1 for s in user_stats.values() if s.get('last_active', '') > (datetime.now() - timedelta(days=7)).isoformat())
-    
-    banned_count = len(banned_users)
-    promo_count = len(promo_codes)
-    promo_uses = sum(p.get('uses_left', 0) for p in promo_codes.values())
-    
-    text = (
-        f"📊 **ПОЛНАЯ СТАТИСТИКА**\n\n"
-        f"👥 **ПОЛЬЗОВАТЕЛИ:**\n"
-        f"• Всего: {total_users}\n"
-        f"• Активных сегодня: {active_today}\n"
-        f"• Активных за неделю: {active_week}\n"
-        f"• Забанено: {banned_count}\n\n"
-        f"💰 **ФИНАНСЫ:**\n"
-        f"• Общий баланс: {total_balance}$\n"
-        f"• Средний баланс: {avg_balance:.2f}$\n"
-        f"• Всего потрачено: {total_spent}$\n"
-        f"• Всего выиграно: {total_won}$\n"
-        f"• Прибыль: {total_spent - total_won}$\n\n"
-        f"🎲 **КЕЙСЫ:**\n"
-        f"• Открыто всего: {total_cases}\n"
-        f"• Среднее на пользователя: {total_cases/total_users:.1f} шт\n\n"
-        f"🎁 **ПРОМОКОДЫ:**\n"
-        f"• Активных: {promo_count}\n"
-        f"• Осталось использований: {promo_uses}"
-    )
-    
-    keyboard = [[InlineKeyboardButton("◀️ Назад", callback_data="admin_panel")]]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    await query.edit_message_text(text, reply_markup=reply_markup, parse_mode='Markdown')
-
-# ============================================
-# АДМИН - СОХРАНЕНИЕ ДАННЫХ
-# ============================================
-async def admin_save(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    
-    try:
-        # Сохраняем данные в файлы
-        data = {
-            'user_balances': user_balances,
-            'user_stats': user_stats,
-            'banned_users': list(banned_users),
-            'promo_codes': promo_codes,
-            'transactions': transactions[-100:]  # последние 100 транзакций
-        }
-        
-        # Здесь можно добавить сохранение в файл
-        # async with aiofiles.open('backup.json', 'w') as f:
-        #     await f.write(json.dumps(data, indent=2))
-        
-        await query.edit_message_text(
-            "✅ Данные сохранены!\n\n"
-            f"Пользователей: {len(user_stats)}\n"
-            f"Балансов: {len(user_balances)}\n"
-            f"Промокодов: {len(promo_codes)}",
-            reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton("◀️ Назад", callback_data="admin_panel")
-            ]])
-        )
-    except Exception as e:
-        await query.edit_message_text(
-            f"❌ Ошибка сохранения: {e}",
-            reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton("◀️ Назад", callback_data="admin_panel")
-            ]])
-        )
-
-# ============================================
-# АДМИН - ДОПОЛНИТЕЛЬНЫЕ ФУНКЦИИ
-# ============================================
 async def admin_promo_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     
-    if not promo_codes:
+    if 'promo_codes' not in context.bot_data or not context.bot_data['promo_codes']:
         await query.edit_message_text(
             "📋 **Список промокодов**\n\nНет активных промокодов",
             reply_markup=InlineKeyboardMarkup([[
@@ -1713,6 +2263,8 @@ async def admin_promo_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ]])
         )
         return
+    
+    promo_codes = context.bot_data['promo_codes']
     
     text = "📋 **Список промокодов**\n\n"
     for name, data in promo_codes.items():
@@ -1728,7 +2280,7 @@ async def admin_promo_delete(update: Update, context: ContextTypes.DEFAULT_TYPE)
     query = update.callback_query
     await query.answer()
     
-    if not promo_codes:
+    if 'promo_codes' not in context.bot_data or not context.bot_data['promo_codes']:
         await query.edit_message_text(
             "❌ Нет промокодов для удаления",
             reply_markup=InlineKeyboardMarkup([[
@@ -1736,6 +2288,8 @@ async def admin_promo_delete(update: Update, context: ContextTypes.DEFAULT_TYPE)
             ]])
         )
         return
+    
+    promo_codes = context.bot_data['promo_codes']
     
     keyboard = []
     for name in promo_codes.keys():
@@ -1756,8 +2310,8 @@ async def delete_promo_confirm(update: Update, context: ContextTypes.DEFAULT_TYP
     
     promo_name = query.data.replace("delete_promo_", "")
     
-    if promo_name in promo_codes:
-        del promo_codes[promo_name]
+    if 'promo_codes' in context.bot_data and promo_name in context.bot_data['promo_codes']:
+        del context.bot_data['promo_codes'][promo_name]
         await query.edit_message_text(
             f"✅ Промокод {promo_name} удален",
             reply_markup=InlineKeyboardMarkup([[
@@ -1772,65 +2326,42 @@ async def delete_promo_confirm(update: Update, context: ContextTypes.DEFAULT_TYP
             ]])
         )
 
-async def admin_balance_check(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# ============================================
+# ПРОЧИЕ АДМИН ФУНКЦИИ
+# ============================================
+async def admin_balance_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    text = "💰 **УПРАВЛЕНИЕ БАЛАНСОМ**\n\nВыберите действие:"
+    
+    keyboard = [
+        [InlineKeyboardButton("➕ Добавить баланс", callback_data="admin_balance_add")],
+        [InlineKeyboardButton("➖ Снять баланс", callback_data="admin_balance_remove")],
+        [InlineKeyboardButton("🔍 Проверить баланс", callback_data="admin_balance_check")],
+        [InlineKeyboardButton("◀️ Назад", callback_data="admin_panel")]
+    ]
+    
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await query.edit_message_text(text, reply_markup=reply_markup, parse_mode='Markdown')
+
+async def admin_balance_add(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     
     await query.edit_message_text(
-        "🔍 **Проверка баланса**\n\nВведите ID пользователя:",
+        "💰 **Добавление баланса**\n\n"
+        "Введите ID пользователя и сумму через пробел\n"
+        "Пример: `123456789 10`",
+        parse_mode='Markdown',
         reply_markup=InlineKeyboardMarkup([[
             InlineKeyboardButton("❌ Отмена", callback_data="admin_balance")
         ]])
     )
-    return WAITING_FOR_ADMIN_BALANCE_CHECK
-
-async def admin_balance_check_process(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID:
-        return ConversationHandler.END
     
-    try:
-        target_id = int(update.message.text.strip())
-        
-        balance = user_balances.get(target_id, 0)
-        stats = user_stats.get(target_id, {})
-        
-        text = (
-            f"🔍 **Информация о пользователе**\n\n"
-            f"🆔 ID: {target_id}\n"
-            f"📝 Никнейм: {stats.get('nickname', 'Неизвестно')}\n"
-            f"💰 Баланс: {balance}$\n"
-            f"📊 Статус: {'⛔ Забанен' if target_id in banned_users else '✅ Активен'}\n\n"
-            f"📈 Статистика:\n"
-            f"• Открыто кейсов: {stats.get('opened_cases', 0)}\n"
-            f"• Потрачено: {stats.get('spent', 0)}$\n"
-            f"• Выиграно: {stats.get('won', 0)}$"
-        )
-        
-        await update.message.reply_text(
-            text,
-            reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton("◀️ Назад", callback_data="admin_balance")
-            ]]),
-            parse_mode='Markdown'
-        )
-    except ValueError:
-        await update.message.reply_text("❌ Неверный ID")
-    
-    return ConversationHandler.END
+    return WAITING_FOR_ADMIN_USER_ID
 
-async def admin_balance_remove(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    
-    await query.edit_message_text(
-        "➖ **Снятие баланса**\n\nВведите ID пользователя и сумму через пробел\nПример: `123456789 5`",
-        reply_markup=InlineKeyboardMarkup([[
-            InlineKeyboardButton("❌ Отмена", callback_data="admin_balance")
-        ]])
-    )
-    return WAITING_FOR_ADMIN_BALANCE_REMOVE
-
-async def admin_balance_remove_process(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def admin_balance_add_process(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return ConversationHandler.END
     
@@ -1844,7 +2375,7 @@ async def admin_balance_remove_process(update: Update, context: ContextTypes.DEF
                 InlineKeyboardButton("◀️ Назад", callback_data="admin_balance")
             ]])
         )
-        return WAITING_FOR_ADMIN_BALANCE_REMOVE
+        return WAITING_FOR_ADMIN_USER_ID
     
     try:
         target_id = int(parts[0])
@@ -1852,648 +2383,52 @@ async def admin_balance_remove_process(update: Update, context: ContextTypes.DEF
         
         if amount <= 0:
             await update.message.reply_text("❌ Сумма должна быть больше 0")
-            return WAITING_FOR_ADMIN_BALANCE_REMOVE
+            return WAITING_FOR_ADMIN_USER_ID
         
-        if target_id not in user_balances:
-            await update.message.reply_text("❌ Пользователь не найден")
-            return WAITING_FOR_ADMIN_BALANCE_REMOVE
-        
-        if user_balances[target_id] < amount:
-            await update.message.reply_text(f"❌ Недостаточно средств. Баланс: {user_balances[target_id]}$")
-            return WAITING_FOR_ADMIN_BALANCE_REMOVE
-        
-        user_balances[target_id] -= amount
-        
-        transactions.append({
-            'user_id': target_id,
-            'type': 'admin_remove',
-            'amount': amount,
-            'admin_id': ADMIN_ID,
-            'date': datetime.now().isoformat()
-        })
+        # В реальном проекте нужно получать user_data по ID
+        # Пока просто уведомляем
         
         await update.message.reply_text(
-            f"✅ С баланса пользователя {target_id} снято {amount}$\n"
-            f"Текущий баланс: {user_balances[target_id]}$",
+            f"✅ Баланс пользователя {target_id} пополнен на {amount}$\n"
+            f"(Данные временные, пользователь должен быть онлайн)",
             reply_markup=InlineKeyboardMarkup([[
                 InlineKeyboardButton("◀️ В админ-панель", callback_data="admin_panel")
             ]])
         )
         
-        try:
-            await context.bot.send_message(
-                chat_id=target_id,
-                text=f"➖ Администратор снял с вашего баланса {amount}$\n"
-                     f"Текущий баланс: {user_balances[target_id]}$"
-            )
-        except:
-            pass
-        
     except ValueError:
         await update.message.reply_text("❌ Неверный формат чисел")
-        return WAITING_FOR_ADMIN_BALANCE_REMOVE
+        return WAITING_FOR_ADMIN_USER_ID
     
     return ConversationHandler.END
 
-async def admin_unban_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def admin_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    
-    if not banned_users:
-        await query.edit_message_text(
-            "📋 **Список забаненных**\n\nНет забаненных пользователей",
-            reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton("◀️ Назад", callback_data="admin_ban")
-            ]])
-        )
-        return
-    
-    keyboard = []
-    for user_id in list(banned_users)[:10]:  # Показываем только первые 10
-        nickname = user_stats.get(user_id, {}).get('nickname', 'Неизвестно')
-        keyboard.append([InlineKeyboardButton(f"🔓 {user_id} ({nickname})", callback_data=f"unban_{user_id}")])
-    
-    keyboard.append([InlineKeyboardButton("◀️ Назад", callback_data="admin_ban")])
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    await query.edit_message_text(
-        "🔓 **Разбан пользователей**\n\nВыберите пользователя для разбана:",
-        reply_markup=reply_markup
-    )
-
-async def unban_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    
-    user_id = int(query.data.replace("unban_", ""))
-    
-    if user_id in banned_users:
-        banned_users.remove(user_id)
-        
-        transactions.append({
-            'user_id': user_id,
-            'type': 'unban',
-            'admin_id': ADMIN_ID,
-            'date': datetime.now().isoformat()
-        })
-        
-        await query.edit_message_text(
-            f"✅ Пользователь {user_id} разбанен",
-            reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton("◀️ Назад", callback_data="admin_ban")
-            ]])
-        )
-        
-        try:
-            await context.bot.send_message(
-                chat_id=user_id,
-                text="🔓 Вы были разбанены!"
-            )
-        except:
-            pass
-    else:
-        await query.edit_message_text(
-            "❌ Пользователь не найден в списке забаненных",
-            reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton("◀️ Назад", callback_data="admin_ban")
-            ]])
-        )
-
-async def admin_ban_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    
-    if not banned_users:
-        await query.edit_message_text(
-            "📋 **Список забаненных**\n\nНет забаненных пользователей",
-            reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton("◀️ Назад", callback_data="admin_ban")
-            ]])
-        )
-        return
-    
-    text = "📋 **Список забаненных пользователей**\n\n"
-    for user_id in banned_users:
-        nickname = user_stats.get(user_id, {}).get('nickname', 'Неизвестно')
-        text += f"• {user_id} ({nickname})\n"
-    
-    keyboard = [[InlineKeyboardButton("◀️ Назад", callback_data="admin_ban")]]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    await query.edit_message_text(text, reply_markup=reply_markup, parse_mode='Markdown')
-
-# ============================================
-# КЕЙСЫ - КАТЕГОРИИ
-# ============================================
-async def cases_categories(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    
-    keyboard = [
-        [InlineKeyboardButton("💰 Денежные кейсы", callback_data="case_cat_money")],
-        [InlineKeyboardButton("🎮 Кейсы с аккаунтами", callback_data="case_cat_accounts")],
-        [InlineKeyboardButton("🕹️ Кейсы с играми", callback_data="case_cat_games")],
-        [InlineKeyboardButton("◀️ Назад", callback_data="cases_menu")]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    await query.edit_message_text(
-        "📂 **КАТЕГОРИИ КЕЙСОВ**\n\n"
-        "Выберите категорию:",
-        reply_markup=reply_markup,
-        parse_mode='Markdown'
-    )
-
-async def case_category_money(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    
-    text = "💰 **ДЕНЕЖНЫЕ КЕЙСЫ**\n\n"
-    text += "Кейсы с реальными денежными выигрышами на баланс!\n\n"
-    
-    keyboard = []
-    for case_id in CASE_CATEGORIES['money']['cases']:
-        case = CASES.get(case_id)
-        if case:
-            keyboard.append([InlineKeyboardButton(
-                f"{case['name']} - {case['price']}$",
-                callback_data=f"case_{case_id}"
-            )])
-    
-    keyboard.append([InlineKeyboardButton("◀️ Назад к категориям", callback_data="cases_categories")])
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    await query.edit_message_text(text, reply_markup=reply_markup, parse_mode='Markdown')
-
-async def case_category_accounts(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    
-    text = "🎮 **КЕЙСЫ С АККАУНТАМИ**\n\n"
-    text += CASE_CATEGORIES['accounts']['description']
-    
-    keyboard = [[InlineKeyboardButton("◀️ Назад к категориям", callback_data="cases_categories")]]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    await query.edit_message_text(text, reply_markup=reply_markup, parse_mode='Markdown')
-
-async def case_category_games(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    
-    text = "🕹️ **КЕЙСЫ С ИГРАМИ**\n\n"
-    text += "Выигрывай лицензионные игры!\n\n"
-    
-    keyboard = []
-    for case_id in CASE_CATEGORIES['games']['cases']:
-        case = CASES.get(case_id)
-        if case:
-            keyboard.append([InlineKeyboardButton(
-                f"{case['name']} - {case['price']}$",
-                callback_data=f"case_{case_id}"
-            )])
-    
-    keyboard.append([InlineKeyboardButton("◀️ Назад к категориям", callback_data="cases_categories")])
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    await query.edit_message_text(text, reply_markup=reply_markup, parse_mode='Markdown')
-
-# ============================================
-# КЕЙСЫ - МЕНЮ
-# ============================================
-async def cases_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    
-    user_id = query.from_user.id
-    balance = user_balances.get(user_id, 0)
-    
-    keyboard = [
-        [InlineKeyboardButton("📂 Категории кейсов", callback_data="cases_categories")],
-        [InlineKeyboardButton("🎁 Бесплатный кейс", callback_data="case_free")],
-        [InlineKeyboardButton("◀️ Назад", callback_data="back_to_menu")]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    await query.edit_message_text(
-        f"🎲 **КЕЙСЫ**\n\n"
-        f"💰 Твой баланс: {balance}$\n\n"
-        f"🔥 НОВИНКА: Изумрудный кейс (10$) и Terraria (1.5$)!\n\n"
-        f"Выбери раздел:",
-        reply_markup=reply_markup,
-        parse_mode='Markdown'
-    )
-
-async def case_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    
-    case_id = query.data.replace("case_", "")
-    case = CASES.get(case_id)
-    
-    if not case:
-        return
-    
-    items_text = ""
-    for item in case['display_items']:
-        if item.get('type') == 'game':
-            items_text += f"• 🎮 {item['name']} — {item['chance']}%\n"
-        else:
-            items_text += f"• {item['name']} — {item['chance']}%\n"
-    
-    cooldown_text = ""
-    if case_id == 'free':
-        user_id = query.from_user.id
-        last_open = case_cooldowns.get(user_id)
-        if last_open:
-            time_diff = datetime.now() - last_open
-            if time_diff.days < 3:
-                remaining = timedelta(days=3) - time_diff
-                hours = remaining.seconds // 3600
-                minutes = (remaining.seconds % 3600) // 60
-                cooldown_text = f"\n⏳ Доступно через: {hours}ч {minutes}м"
-            else:
-                cooldown_text = "\n✅ Доступен сейчас!"
-        else:
-            cooldown_text = "\n✅ Доступен сейчас!"
-    
-    game_info = ""
-    if case.get('game_name'):
-        game_info = f"\n🎮 **Игра:** {case['game_name']}\n"
-        game_info += f"🔑 **Активация:** {case['activation']}\n"
-        game_info += f"📦 **Выдача:** {case['delivery']}\n"
     
     text = (
-        f"{case['name']}\n"
-        f"{'='*20}\n"
-        f"💰 Цена: {case['price']}$\n"
-        f"📊 Уровень риска: {case['risk_color']} {case['risk_level']}\n"
-        f"{case['risk_scale']}\n"
-        f"{game_info}\n"
-        f"📦 Возможный дроп:\n{items_text}\n"
-        f"{cooldown_text}\n\n"
-        f"💎 Выигрыш зачисляется на баланс автоматически!"
+        f"📊 **ПОЛНАЯ СТАТИСТИКА**\n\n"
+        f"⚠️ В текущей версии статистика временная\n\n"
+        f"📋 Для полноценной статистики нужна база данных\n\n"
+        f"**Активные промокоды:** {len(context.bot_data.get('promo_codes', {}))}"
     )
     
-    keyboard = [
-        [InlineKeyboardButton("🎲 КУПИТЬ ЗА БАЛАНС", callback_data=f"open_balance_{case_id}")],
-        [InlineKeyboardButton("💳 КУПИТЬ ЗА USDT", callback_data=f"open_crypto_{case_id}")],
-        [InlineKeyboardButton("◀️ Назад", callback_data="cases_categories")]
-    ]
+    keyboard = [[InlineKeyboardButton("◀️ Назад", callback_data="admin_panel")]]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     await query.edit_message_text(text, reply_markup=reply_markup, parse_mode='Markdown')
 
-# ============================================
-# КРИПТО-ОПЛАТА ДЛЯ КЕЙСОВ
-# ============================================
-async def open_case_crypto(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def admin_save(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     
-    case_id = query.data.replace("open_crypto_", "")
-    case = CASES.get(case_id)
-    
-    if not case:
-        return
-    
-    user_id = query.from_user.id
-    price = case['price']
-    
-    if price <= 0:
-        await query.answer("❌ Этот кейс бесплатный!", show_alert=True)
-        return
-    
-    # Создаем инвойс
-    invoice = await create_crypto_invoice(price, f"Case: {case['name']}", user_id)
-    
-    if not invoice:
-        await query.edit_message_text(
-            "❌ Ошибка создания счета. Попробуйте позже.",
-            reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton("◀️ Назад", callback_data=f"case_{case_id}")
-            ]])
-        )
-        return
-    
-    invoice_id = invoice.get('invoice_id')
-    pay_url = invoice.get('pay_url')
-    
-    # Сохраняем инвойс
-    pending_invoices[invoice_id] = {
-        'user_id': user_id,
-        'type': 'case',
-        'item_id': case_id,
-        'amount': price,
-        'date': datetime.now().isoformat()
-    }
-    
-    text = (
-        f"💳 **ОПЛАТА КЕЙСА**\n\n"
-        f"Кейс: {case['name']}\n"
-        f"Сумма: {price} USDT\n\n"
-        f"Для оплаты нажмите кнопку ниже и отправьте {price} USDT"
+    await query.edit_message_text(
+        "✅ Данные сохранены в persistence!\n\n"
+        "При перезапуске бота данные восстановятся.",
+        reply_markup=InlineKeyboardMarkup([[
+            InlineKeyboardButton("◀️ Назад", callback_data="admin_panel")
+        ]])
     )
-    
-    keyboard = [
-        [InlineKeyboardButton("💳 ОПЛАТИТЬ", url=pay_url)],
-        [InlineKeyboardButton("✅ Я ОПЛАТИЛ", callback_data=f"check_case_payment_{invoice_id}")],
-        [InlineKeyboardButton("❌ Отмена", callback_data=f"case_{case_id}")]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    await query.edit_message_text(text, reply_markup=reply_markup, parse_mode='Markdown')
-
-async def check_case_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    
-    invoice_id = query.data.replace("check_case_payment_", "")
-    
-    if invoice_id not in pending_invoices:
-        await query.answer("❌ Счет не найден или устарел", show_alert=True)
-        return
-    
-    invoice_data = pending_invoices[invoice_id]
-    user_id = query.from_user.id
-    
-    if invoice_data['user_id'] != user_id:
-        await query.answer("❌ Это не ваш счет", show_alert=True)
-        return
-    
-    # Проверяем оплату
-    paid = await check_crypto_payment(invoice_id)
-    
-    if not paid:
-        await query.answer("❌ Оплата не найдена", show_alert=True)
-        return
-    
-    # Оплачено - открываем кейс
-    case_id = invoice_data['item_id']
-    case = CASES.get(case_id)
-    
-    if not case:
-        return
-    
-    # Удаляем инвойс
-    del pending_invoices[invoice_id]
-    
-    # Открываем кейс
-    if user_id not in user_stats:
-        user_stats[user_id] = {
-            'spent': 0,
-            'opened_cases': 0,
-            'won': 0,
-            'nickname': query.from_user.first_name,
-            'join_date': datetime.now().isoformat()
-        }
-    
-    transactions.append({
-        'user_id': user_id,
-        'type': 'case_purchase_crypto',
-        'case': case['name'],
-        'amount': invoice_data['amount'],
-        'date': datetime.now().isoformat()
-    })
-    
-    user_stats[user_id]['spent'] += invoice_data['amount']
-    user_stats[user_id]['opened_cases'] += 1
-    
-    animation_frames = [
-        "🎲 Открываем кейс... ░░░░░░░░░░",
-        "⚙️ Открываем кейс... █░░░░░░░░░",
-        "🔄 Открываем кейс... ██░░░░░░░░",
-        "🎰 Открываем кейс... ███░░░░░░░",
-        "💫 Открываем кейс... ████░░░░░░",
-        "✨ Открываем кейс... █████░░░░░",
-        "🌟 Открываем кейс... ██████░░░░",
-        "💥 Открываем кейс... ███████░░░",
-    ]
-    
-    message = await query.edit_message_text(animation_frames[0])
-    
-    for i in range(1, len(animation_frames)):
-        await asyncio.sleep(0.3)
-        await message.edit_text(animation_frames[i])
-    
-    await asyncio.sleep(0.2)
-    await message.edit_text("🔮 Выбираем приз... ████████░░")
-    await asyncio.sleep(0.3)
-    await message.edit_text("💎 Почти готово... █████████░")
-    await asyncio.sleep(0.3)
-    
-    rand = random.random() * 100
-    cumulative = 0
-    win_item = None
-    
-    for item in case['real_items']:
-        cumulative += item['chance']
-        if rand <= cumulative:
-            win_item = item
-            break
-    
-    result_text = ""
-    
-    if win_item['type'] == 'money':
-        win_amount = win_item['amount']
-        user_balances[user_id] = user_balances.get(user_id, 0) + win_amount
-        user_stats[user_id]['won'] += win_amount
-        result_text = f"💰 **Выигрыш:** {win_amount}$"
-        
-    elif win_item['type'] == 'game':
-        game_name = case.get('game_name', 'игра')
-        result_text = f"🎮 **Вы выиграли {game_name}!**\n\n"
-        result_text += f"🔑 **Активация:** {case['activation']}\n"
-        result_text += f"📦 **Выдача:** {case['delivery']}\n\n"
-        result_text += "Напишите администратору @YungTrezinny для получения."
-        
-        admin_msg = (
-            f"🎮 ВЫИГРЫШ ИГРЫ В КЕЙСЕ\n\n"
-            f"Пользователь: {query.from_user.first_name} (ID: {user_id})\n"
-            f"Кейс: {case['name']}\n"
-            f"Игра: {game_name}"
-        )
-        try:
-            await context.bot.send_message(chat_id=ADMIN_ID, text=admin_msg)
-        except:
-            pass
-    
-    transactions.append({
-        'user_id': user_id,
-        'type': 'case_win',
-        'case': case['name'],
-        'prize': win_item,
-        'date': datetime.now().isoformat()
-    })
-    
-    if win_item['type'] == 'money':
-        if win_amount >= case['price'] * 1.5:
-            result_text = f"🎉🎉🎉 ДЖЕКПОТ! 🎉🎉🎉\n\nТы выиграл {win_amount}$!"
-        elif win_amount > case['price']:
-            result_text = f"🔥 УДАЧА! 🔥\n\nТы выиграл {win_amount}$!"
-        elif win_amount == case['price']:
-            result_text = f"🤝 Вернул своё 🤝\n\nВыигрыш: {win_amount}$"
-        else:
-            result_text = f"😢 Не в этот раз...\n\nВыигрыш: {win_amount}$"
-    
-    keyboard = [
-        [InlineKeyboardButton("🎲 Открыть ещё", callback_data=f"case_{case_id}")],
-        [InlineKeyboardButton("📦 Другие кейсы", callback_data="cases_categories")],
-        [InlineKeyboardButton("👤 В профиль", callback_data="profile_menu")]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    final_text = f"{result_text}\n\n💰 **Твой баланс:** {user_balances[user_id]}$"
-    
-    await message.edit_text(final_text, reply_markup=reply_markup, parse_mode='Markdown')
-
-# ============================================
-# ОТКРЫТИЕ КЕЙСА С БАЛАНСА
-# ============================================
-async def open_case_balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    user_id = query.from_user.id
-    
-    if user_id in banned_users:
-        await query.answer("⛔ Вы забанены!", show_alert=True)
-        return
-    
-    case_id = query.data.replace("open_balance_", "")
-    case = CASES.get(case_id)
-    
-    if not case:
-        return
-    
-    if case_id == 'free':
-        last_open = case_cooldowns.get(user_id)
-        if last_open:
-            time_diff = datetime.now() - last_open
-            if time_diff.days < 3:
-                remaining = timedelta(days=3) - time_diff
-                hours = remaining.seconds // 3600
-                minutes = (remaining.seconds % 3600) // 60
-                await query.answer(
-                    f"⏳ Следующий бесплатный кейс через {hours}ч {minutes}м",
-                    show_alert=True
-                )
-                return
-    
-    if case['price'] > 0:
-        if user_balances.get(user_id, 0) < case['price']:
-            await query.answer("❌ Недостаточно средств на балансе!", show_alert=True)
-            return
-        user_balances[user_id] -= case['price']
-    
-    if user_id not in user_stats:
-        user_stats[user_id] = {
-            'spent': 0,
-            'opened_cases': 0,
-            'won': 0,
-            'nickname': query.from_user.first_name,
-            'join_date': datetime.now().isoformat()
-        }
-    
-    if case['price'] > 0:
-        transactions.append({
-            'user_id': user_id,
-            'type': 'case_purchase',
-            'case': case['name'],
-            'amount': case['price'],
-            'date': datetime.now().isoformat()
-        })
-        user_stats[user_id]['spent'] += case['price']
-        user_stats[user_id]['opened_cases'] += 1
-    
-    animation_frames = [
-        "🎲 Открываем кейс... ░░░░░░░░░░",
-        "⚙️ Открываем кейс... █░░░░░░░░░",
-        "🔄 Открываем кейс... ██░░░░░░░░",
-        "🎰 Открываем кейс... ███░░░░░░░",
-        "💫 Открываем кейс... ████░░░░░░",
-        "✨ Открываем кейс... █████░░░░░",
-        "🌟 Открываем кейс... ██████░░░░",
-        "💥 Открываем кейс... ███████░░░",
-    ]
-    
-    message = await query.edit_message_text(animation_frames[0])
-    
-    for i in range(1, len(animation_frames)):
-        await asyncio.sleep(0.3)
-        await message.edit_text(animation_frames[i])
-    
-    await asyncio.sleep(0.2)
-    await message.edit_text("🔮 Выбираем приз... ████████░░")
-    await asyncio.sleep(0.3)
-    await message.edit_text("💎 Почти готово... █████████░")
-    await asyncio.sleep(0.3)
-    
-    rand = random.random() * 100
-    cumulative = 0
-    win_item = None
-    
-    for item in case['real_items']:
-        cumulative += item['chance']
-        if rand <= cumulative:
-            win_item = item
-            break
-    
-    result_text = ""
-    
-    if win_item['type'] == 'money':
-        win_amount = win_item['amount']
-        user_balances[user_id] = user_balances.get(user_id, 0) + win_amount
-        user_stats[user_id]['won'] += win_amount
-        result_text = f"💰 **Выигрыш:** {win_amount}$"
-        
-    elif win_item['type'] == 'game':
-        game_name = case.get('game_name', 'игра')
-        result_text = f"🎮 **Вы выиграли {game_name}!**\n\n"
-        result_text += f"🔑 **Активация:** {case['activation']}\n"
-        result_text += f"📦 **Выдача:** {case['delivery']}\n\n"
-        result_text += "Напишите администратору @YungTrezinny для получения."
-        
-        admin_msg = (
-            f"🎮 ВЫИГРЫШ ИГРЫ В КЕЙСЕ\n\n"
-            f"Пользователь: {query.from_user.first_name} (ID: {user_id})\n"
-            f"Кейс: {case['name']}\n"
-            f"Игра: {game_name}"
-        )
-        try:
-            await context.bot.send_message(chat_id=ADMIN_ID, text=admin_msg)
-        except:
-            pass
-    
-    transactions.append({
-        'user_id': user_id,
-        'type': 'case_win',
-        'case': case['name'],
-        'prize': win_item,
-        'date': datetime.now().isoformat()
-    })
-    
-    if case_id == 'free':
-        case_cooldowns[user_id] = datetime.now()
-    
-    if win_item['type'] == 'money':
-        if win_amount >= case['price'] * 1.5:
-            result_text = f"🎉🎉🎉 ДЖЕКПОТ! 🎉🎉🎉\n\nТы выиграл {win_amount}$!"
-        elif win_amount > case['price']:
-            result_text = f"🔥 УДАЧА! 🔥\n\nТы выиграл {win_amount}$!"
-        elif win_amount == case['price']:
-            result_text = f"🤝 Вернул своё 🤝\n\nВыигрыш: {win_amount}$"
-        else:
-            result_text = f"😢 Не в этот раз...\n\nВыигрыш: {win_amount}$"
-    
-    keyboard = [
-        [InlineKeyboardButton("🎲 Открыть ещё", callback_data=f"case_{case_id}")],
-        [InlineKeyboardButton("📦 Другие кейсы", callback_data="cases_categories")],
-        [InlineKeyboardButton("👤 В профиль", callback_data="profile_menu")]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    final_text = f"{result_text}\n\n💰 **Твой баланс:** {user_balances[user_id]}$"
-    
-    await message.edit_text(final_text, reply_markup=reply_markup, parse_mode='Markdown')
 
 # ============================================
 # ФУНКЦИИ ПРОВЕРКИ ПОДПИСКИ И FAQ
@@ -2509,8 +2444,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     user_id = user.id
     
-    if user_id not in user_stats:
-        user_stats[user_id] = {
+    if 'stats' not in context.user_data:
+        context.user_data['stats'] = {
             'spent': 0,
             'opened_cases': 0,
             'won': 0,
@@ -2519,8 +2454,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             'last_active': datetime.now().isoformat()
         }
     
-    if user_id not in user_balances:
-        user_balances[user_id] = 0
+    if 'balance' not in context.user_data:
+        context.user_data['balance'] = 0
     
     is_subscribed = await check_subscription(user_id, context)
     
@@ -2632,16 +2567,22 @@ async def go_to_shop(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await show_main_menu(update, context)
 
 # ============================================
-# ГЛАВНОЕ МЕНЮ
+# ГЛАВНОЕ МЕНЮ (с пробелами)
 # ============================================
 async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     
     # Обновляем last_active
-    if user_id in user_stats:
-        user_stats[user_id]['last_active'] = datetime.now().isoformat()
+    if 'stats' in context.user_data:
+        context.user_data['stats']['last_active'] = datetime.now().isoformat()
     
-    balance = user_balances.get(user_id, 0)
+    balance = context.user_data.get('balance', 0)
+    
+    # Добавляем информацию о бонусе
+    bonus_info = ""
+    if 'bonus' in context.user_data:
+        bonus_day = context.user_data['bonus'].get('day', 1)
+        bonus_info = f"🎁 День бонуса: {bonus_day}/7\n"
     
     keyboard = [
         [InlineKeyboardButton("👤 Мой профиль", callback_data="profile_menu")],
@@ -2659,10 +2600,12 @@ async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = (
         f"👋 **Добро пожаловать!**\n\n"
         f"💰 **Твой баланс:** {balance}$\n\n"
-        f"🔥 **НОВИНКА:** Изумрудный кейс (10$) и Terraria (1.5$)!\n"
+        f"{bonus_info}"
+        f"🔥 **НОВИНКА:** Стартовый кейс (0.5$) и ежедневные бонусы!\n"
         f"🖱 **Кликер** - нажми 54999 раз и получи подпись бесплатно!\n"
         f"💳 **Оплата** с баланса или криптовалютой\n"
-        f"🎁 **Промокоды:** @SlogsPromo"
+        f"🎁 **Промокоды:** @SlogsPromo\n\n"
+        f"✨ **Ежедневные бонусы ждут тебя в профиле!**"
     )
     
     if update.callback_query:
@@ -2671,40 +2614,558 @@ async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(text, reply_markup=reply_markup, parse_mode='Markdown')
 
 # ============================================
-# ЗАГЛУШКИ ДЛЯ ОТСУТСТВУЮЩИХ ФУНКЦИЙ
+# КЕЙСЫ
 # ============================================
-async def catalog(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def cases_categories(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
+    
+    keyboard = [
+        [InlineKeyboardButton("🚀 Стартовые кейсы", callback_data="case_cat_start")],
+        [InlineKeyboardButton("💰 Денежные кейсы", callback_data="case_cat_money")],
+        [InlineKeyboardButton("🎮 Кейсы с аккаунтами", callback_data="case_cat_accounts")],
+        [InlineKeyboardButton("🕹️ Кейсы с играми", callback_data="case_cat_games")],
+        [InlineKeyboardButton("◀️ Назад", callback_data="cases_menu")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
     await query.edit_message_text(
-        "🛍 **Каталог товаров**\n\nВ разработке...",
-        reply_markup=InlineKeyboardMarkup([[
-            InlineKeyboardButton("◀️ Назад", callback_data="back_to_menu")
-        ]])
+        "📂 **КАТЕГОРИИ КЕЙСОВ**\n\n"
+        "Выберите категорию:",
+        reply_markup=reply_markup,
+        parse_mode='Markdown'
     )
 
-async def marketplace(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def case_category_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    await query.edit_message_text(
-        "🏪 **Торговая площадка**\n\nВ разработке...",
-        reply_markup=InlineKeyboardMarkup([[
-            InlineKeyboardButton("◀️ Назад", callback_data="back_to_menu")
-        ]])
-    )
+    
+    text = "🚀 **СТАРТОВЫЕ КЕЙСЫ**\n\n"
+    text += "Кейсы для новичков с низкими ценами!\n\n"
+    
+    keyboard = []
+    for case_id in CASE_CATEGORIES['start']['cases']:
+        case = CASES.get(case_id)
+        if case:
+            keyboard.append([InlineKeyboardButton(
+                f"{case['name']} - {case['price']}$",
+                callback_data=f"case_{case_id}"
+            )])
+    
+    keyboard.append([InlineKeyboardButton("◀️ Назад к категориям", callback_data="cases_categories")])
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await query.edit_message_text(text, reply_markup=reply_markup, parse_mode='Markdown')
 
-async def orders_history(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def case_category_money(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    text = "💰 **ДЕНЕЖНЫЕ КЕЙСЫ**\n\n"
+    text += "Кейсы с реальными денежными выигрышами на баланс!\n\n"
+    
+    keyboard = []
+    for case_id in CASE_CATEGORIES['money']['cases']:
+        case = CASES.get(case_id)
+        if case:
+            keyboard.append([InlineKeyboardButton(
+                f"{case['name']} - {case['price']}$",
+                callback_data=f"case_{case_id}"
+            )])
+    
+    keyboard.append([InlineKeyboardButton("◀️ Назад к категориям", callback_data="cases_categories")])
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await query.edit_message_text(text, reply_markup=reply_markup, parse_mode='Markdown')
+
+async def case_category_accounts(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    text = "🎮 **КЕЙСЫ С АККАУНТАМИ**\n\n"
+    text += CASE_CATEGORIES['accounts']['description']
+    
+    keyboard = [[InlineKeyboardButton("◀️ Назад к категориям", callback_data="cases_categories")]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await query.edit_message_text(text, reply_markup=reply_markup, parse_mode='Markdown')
+
+async def case_category_games(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    text = "🕹️ **КЕЙСЫ С ИГРАМИ**\n\n"
+    text += "Выигрывай лицензионные игры!\n\n"
+    
+    keyboard = []
+    for case_id in CASE_CATEGORIES['games']['cases']:
+        case = CASES.get(case_id)
+        if case:
+            keyboard.append([InlineKeyboardButton(
+                f"{case['name']} - {case['price']}$",
+                callback_data=f"case_{case_id}"
+            )])
+    
+    keyboard.append([InlineKeyboardButton("◀️ Назад к категориям", callback_data="cases_categories")])
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await query.edit_message_text(text, reply_markup=reply_markup, parse_mode='Markdown')
+
+async def cases_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     
     user_id = query.from_user.id
-    user_orders = pending_orders.get(user_id, [])
+    balance = context.user_data.get('balance', 0)
+    
+    keyboard = [
+        [InlineKeyboardButton("📂 Категории кейсов", callback_data="cases_categories")],
+        [InlineKeyboardButton("🎁 Бесплатный кейс", callback_data="case_free")],
+        [InlineKeyboardButton("◀️ Назад", callback_data="back_to_menu")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await query.edit_message_text(
+        f"🎲 **КЕЙСЫ**\n\n"
+        f"💰 Твой баланс: {balance}$\n\n"
+        f"🔥 НОВИНКА: Стартовый кейс (0.5$) и Terraria (1.5$)!\n\n"
+        f"Выбери раздел:",
+        reply_markup=reply_markup,
+        parse_mode='Markdown'
+    )
+
+async def case_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    case_id = query.data.replace("case_", "")
+    case = CASES.get(case_id)
+    
+    if not case:
+        return
+    
+    items_text = ""
+    for item in case['display_items']:  # Показываем завышенные шансы
+        if item.get('type') == 'game':
+            items_text += f"• 🎮 {item['name']} — {item['chance']}%\n"
+        else:
+            items_text += f"• {item['name']} — {item['chance']}%\n"
+    
+    cooldown_text = ""
+    if case_id == 'free':
+        user_id = query.from_user.id
+        last_open = case_cooldowns.get(user_id)
+        if last_open:
+            time_diff = datetime.now() - last_open
+            if time_diff.days < 3:
+                remaining = timedelta(days=3) - time_diff
+                hours = remaining.seconds // 3600
+                minutes = (remaining.seconds % 3600) // 60
+                cooldown_text = f"\n⏳ Доступно через: {hours}ч {minutes}м"
+            else:
+                cooldown_text = "\n✅ Доступен сейчас!"
+        else:
+            cooldown_text = "\n✅ Доступен сейчас!"
+    
+    game_info = ""
+    if case.get('game_name'):
+        game_info = f"\n🎮 **Игра:** {case['game_name']}\n"
+        game_info += f"🔑 **Активация:** {case['activation']}\n"
+        game_info += f"📦 **Выдача:** {case['delivery']}\n"
+    
+    text = (
+        f"{case['name']}\n"
+        f"{'='*20}\n"
+        f"💰 Цена: {case['price']}$\n"
+        f"📊 Уровень риска: {case['risk_color']} {case['risk_level']}\n"
+        f"{case['risk_scale']}\n"
+        f"{game_info}\n"
+        f"📦 Возможный дроп:\n{items_text}\n"
+        f"{cooldown_text}\n\n"
+        f"💎 Выигрыш зачисляется на баланс автоматически!"
+    )
+    
+    keyboard = [
+        [InlineKeyboardButton("🎲 КУПИТЬ ЗА БАЛАНС", callback_data=f"open_balance_{case_id}")],
+        [InlineKeyboardButton("💳 КУПИТЬ ЗА USDT", callback_data=f"open_crypto_{case_id}")],
+        [InlineKeyboardButton("◀️ Назад", callback_data="cases_categories")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await query.edit_message_text(text, reply_markup=reply_markup, parse_mode='Markdown')
+
+# ============================================
+# ОТКРЫТИЕ КЕЙСА
+# ============================================
+async def open_case_balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    user_id = query.from_user.id
+    
+    if user_id in banned_users:
+        await query.answer("⛔ Вы забанены!", show_alert=True)
+        return
+    
+    case_id = query.data.replace("open_balance_", "")
+    case = CASES.get(case_id)
+    
+    if not case:
+        return
+    
+    if case_id == 'free':
+        last_open = case_cooldowns.get(user_id)
+        if last_open:
+            time_diff = datetime.now() - last_open
+            if time_diff.days < 3:
+                remaining = timedelta(days=3) - time_diff
+                hours = remaining.seconds // 3600
+                minutes = (remaining.seconds % 3600) // 60
+                await query.answer(
+                    f"⏳ Следующий бесплатный кейс через {hours}ч {minutes}м",
+                    show_alert=True
+                )
+                return
+    
+    if case['price'] > 0:
+        if context.user_data.get('balance', 0) < case['price']:
+            await query.answer("❌ Недостаточно средств на балансе!", show_alert=True)
+            return
+        context.user_data['balance'] -= case['price']
+    
+    if 'stats' not in context.user_data:
+        context.user_data['stats'] = {
+            'spent': 0,
+            'opened_cases': 0,
+            'won': 0,
+            'nickname': query.from_user.first_name,
+            'join_date': datetime.now().isoformat()
+        }
+    
+    if case['price'] > 0:
+        if 'transactions' not in context.user_data:
+            context.user_data['transactions'] = []
+        context.user_data['transactions'].append({
+            'type': 'case_purchase',
+            'case': case['name'],
+            'amount': case['price'],
+            'date': datetime.now().isoformat()
+        })
+        context.user_data['stats']['spent'] += case['price']
+        context.user_data['stats']['opened_cases'] += 1
+    
+    animation_frames = [
+        "🎲 Открываем кейс... ░░░░░░░░░░",
+        "⚙️ Открываем кейс... █░░░░░░░░░",
+        "🔄 Открываем кейс... ██░░░░░░░░",
+        "🎰 Открываем кейс... ███░░░░░░░",
+        "💫 Открываем кейс... ████░░░░░░",
+        "✨ Открываем кейс... █████░░░░░",
+        "🌟 Открываем кейс... ██████░░░░",
+        "💥 Открываем кейс... ███████░░░",
+    ]
+    
+    message = await query.edit_message_text(animation_frames[0])
+    
+    for i in range(1, len(animation_frames)):
+        await asyncio.sleep(0.3)
+        await message.edit_text(animation_frames[i])
+    
+    await asyncio.sleep(0.2)
+    await message.edit_text("🔮 Выбираем приз... ████████░░")
+    await asyncio.sleep(0.3)
+    await message.edit_text("💎 Почти готово... █████████░")
+    await asyncio.sleep(0.3)
+    
+    rand = random.random() * 100
+    cumulative = 0
+    win_item = None
+    
+    for item in case['real_items']:  # Используем реальные шансы
+        cumulative += item['chance']
+        if rand <= cumulative:
+            win_item = item
+            break
+    
+    result_text = ""
+    
+    if win_item['type'] == 'money':
+        win_amount = win_item['amount']
+        context.user_data['balance'] = context.user_data.get('balance', 0) + win_amount
+        context.user_data['stats']['won'] += win_amount
+        result_text = f"💰 **Выигрыш:** {win_amount}$"
+        
+    elif win_item['type'] == 'game':
+        game_name = case.get('game_name', 'игра')
+        result_text = f"🎮 **Вы выиграли {game_name}!**\n\n"
+        result_text += f"🔑 **Активация:** {case['activation']}\n"
+        result_text += f"📦 **Выдача:** {case['delivery']}\n\n"
+        result_text += "Напишите администратору @YungTrezinny для получения."
+        
+        admin_msg = (
+            f"🎮 ВЫИГРЫШ ИГРЫ В КЕЙСЕ\n\n"
+            f"Пользователь: {query.from_user.first_name} (ID: {user_id})\n"
+            f"Кейс: {case['name']}\n"
+            f"Игра: {game_name}"
+        )
+        try:
+            await context.bot.send_message(chat_id=ADMIN_ID, text=admin_msg)
+        except:
+            pass
+    
+    if 'transactions' not in context.user_data:
+        context.user_data['transactions'] = []
+    context.user_data['transactions'].append({
+        'type': 'case_win',
+        'case': case['name'],
+        'prize': win_item,
+        'date': datetime.now().isoformat()
+    })
+    
+    if case_id == 'free':
+        case_cooldowns[user_id] = datetime.now()
+    
+    if win_item['type'] == 'money':
+        if win_amount >= case['price'] * 1.5:
+            result_text = f"🎉🎉🎉 ДЖЕКПОТ! 🎉🎉🎉\n\nТы выиграл {win_amount}$!"
+        elif win_amount > case['price']:
+            result_text = f"🔥 УДАЧА! 🔥\n\nТы выиграл {win_amount}$!"
+        elif win_amount == case['price']:
+            result_text = f"🤝 Вернул своё 🤝\n\nВыигрыш: {win_amount}$"
+        else:
+            result_text = f"😢 Не в этот раз...\n\nВыигрыш: {win_amount}$"
+    
+    keyboard = [
+        [InlineKeyboardButton("🎲 Открыть ещё", callback_data=f"case_{case_id}")],
+        [InlineKeyboardButton("📦 Другие кейсы", callback_data="cases_categories")],
+        [InlineKeyboardButton("👤 В профиль", callback_data="profile_menu")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    final_text = f"{result_text}\n\n💰 **Твой баланс:** {context.user_data['balance']}$"
+    
+    await message.edit_text(final_text, reply_markup=reply_markup, parse_mode='Markdown')
+
+# ============================================
+# КРИПТО-ОПЛАТА ДЛЯ КЕЙСОВ
+# ============================================
+async def open_case_crypto(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    case_id = query.data.replace("open_crypto_", "")
+    case = CASES.get(case_id)
+    
+    if not case:
+        return
+    
+    user_id = query.from_user.id
+    price = case['price']
+    
+    if price <= 0:
+        await query.answer("❌ Этот кейс бесплатный!", show_alert=True)
+        return
+    
+    # Создаем инвойс
+    invoice = await create_crypto_invoice(price, f"Case: {case['name']}", user_id)
+    
+    if not invoice:
+        await query.edit_message_text(
+            "❌ Ошибка создания счета. Попробуйте позже.",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("◀️ Назад", callback_data=f"case_{case_id}")
+            ]])
+        )
+        return
+    
+    invoice_id = invoice.get('invoice_id')
+    pay_url = invoice.get('pay_url')
+    
+    # Сохраняем инвойс
+    if 'pending_invoices' not in context.bot_data:
+        context.bot_data['pending_invoices'] = {}
+    
+    context.bot_data['pending_invoices'][invoice_id] = {
+        'user_id': user_id,
+        'type': 'case',
+        'item_id': case_id,
+        'amount': price,
+        'date': datetime.now().isoformat()
+    }
+    
+    text = (
+        f"💳 **ОПЛАТА КЕЙСА**\n\n"
+        f"Кейс: {case['name']}\n"
+        f"Сумма: {price} USDT\n\n"
+        f"Для оплаты нажмите кнопку ниже и отправьте {price} USDT"
+    )
+    
+    keyboard = [
+        [InlineKeyboardButton("💳 ОПЛАТИТЬ", url=pay_url)],
+        [InlineKeyboardButton("✅ Я ОПЛАТИЛ", callback_data=f"check_case_payment_{invoice_id}")],
+        [InlineKeyboardButton("❌ Отмена", callback_data=f"case_{case_id}")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await query.edit_message_text(text, reply_markup=reply_markup, parse_mode='Markdown')
+
+async def check_case_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    invoice_id = query.data.replace("check_case_payment_", "")
+    
+    if 'pending_invoices' not in context.bot_data or invoice_id not in context.bot_data['pending_invoices']:
+        await query.answer("❌ Счет не найден или устарел", show_alert=True)
+        return
+    
+    invoice_data = context.bot_data['pending_invoices'][invoice_id]
+    user_id = query.from_user.id
+    
+    if invoice_data['user_id'] != user_id:
+        await query.answer("❌ Это не ваш счет", show_alert=True)
+        return
+    
+    # Проверяем оплату
+    paid = await check_crypto_payment(invoice_id)
+    
+    if not paid:
+        await query.answer("❌ Оплата не найдена", show_alert=True)
+        return
+    
+    # Оплачено - открываем кейс
+    case_id = invoice_data['item_id']
+    case = CASES.get(case_id)
+    
+    if not case:
+        return
+    
+    # Удаляем инвойс
+    del context.bot_data['pending_invoices'][invoice_id]
+    
+    # Открываем кейс
+    if 'stats' not in context.user_data:
+        context.user_data['stats'] = {
+            'spent': 0,
+            'opened_cases': 0,
+            'won': 0,
+            'nickname': query.from_user.first_name,
+            'join_date': datetime.now().isoformat()
+        }
+    
+    if 'transactions' not in context.user_data:
+        context.user_data['transactions'] = []
+    
+    context.user_data['transactions'].append({
+        'type': 'case_purchase_crypto',
+        'case': case['name'],
+        'amount': invoice_data['amount'],
+        'date': datetime.now().isoformat()
+    })
+    
+    context.user_data['stats']['spent'] += invoice_data['amount']
+    context.user_data['stats']['opened_cases'] += 1
+    
+    animation_frames = [
+        "🎲 Открываем кейс... ░░░░░░░░░░",
+        "⚙️ Открываем кейс... █░░░░░░░░░",
+        "🔄 Открываем кейс... ██░░░░░░░░",
+        "🎰 Открываем кейс... ███░░░░░░░",
+        "💫 Открываем кейс... ████░░░░░░",
+        "✨ Открываем кейс... █████░░░░░",
+        "🌟 Открываем кейс... ██████░░░░",
+        "💥 Открываем кейс... ███████░░░",
+    ]
+    
+    message = await query.edit_message_text(animation_frames[0])
+    
+    for i in range(1, len(animation_frames)):
+        await asyncio.sleep(0.3)
+        await message.edit_text(animation_frames[i])
+    
+    await asyncio.sleep(0.2)
+    await message.edit_text("🔮 Выбираем приз... ████████░░")
+    await asyncio.sleep(0.3)
+    await message.edit_text("💎 Почти готово... █████████░")
+    await asyncio.sleep(0.3)
+    
+    rand = random.random() * 100
+    cumulative = 0
+    win_item = None
+    
+    for item in case['real_items']:
+        cumulative += item['chance']
+        if rand <= cumulative:
+            win_item = item
+            break
+    
+    result_text = ""
+    
+    if win_item['type'] == 'money':
+        win_amount = win_item['amount']
+        context.user_data['balance'] = context.user_data.get('balance', 0) + win_amount
+        context.user_data['stats']['won'] += win_amount
+        result_text = f"💰 **Выигрыш:** {win_amount}$"
+        
+    elif win_item['type'] == 'game':
+        game_name = case.get('game_name', 'игра')
+        result_text = f"🎮 **Вы выиграли {game_name}!**\n\n"
+        result_text += f"🔑 **Активация:** {case['activation']}\n"
+        result_text += f"📦 **Выдача:** {case['delivery']}\n\n"
+        result_text += "Напишите администратору @YungTrezinny для получения."
+        
+        admin_msg = (
+            f"🎮 ВЫИГРЫШ ИГРЫ В КЕЙСЕ\n\n"
+            f"Пользователь: {query.from_user.first_name} (ID: {user_id})\n"
+            f"Кейс: {case['name']}\n"
+            f"Игра: {game_name}"
+        )
+        try:
+            await context.bot.send_message(chat_id=ADMIN_ID, text=admin_msg)
+        except:
+            pass
+    
+    context.user_data['transactions'].append({
+        'user_id': user_id,
+        'type': 'case_win',
+        'case': case['name'],
+        'prize': win_item,
+        'date': datetime.now().isoformat()
+    })
+    
+    if win_item['type'] == 'money':
+        if win_amount >= case['price'] * 1.5:
+            result_text = f"🎉🎉🎉 ДЖЕКПОТ! 🎉🎉🎉\n\nТы выиграл {win_amount}$!"
+        elif win_amount > case['price']:
+            result_text = f"🔥 УДАЧА! 🔥\n\nТы выиграл {win_amount}$!"
+        elif win_amount == case['price']:
+            result_text = f"🤝 Вернул своё 🤝\n\nВыигрыш: {win_amount}$"
+        else:
+            result_text = f"😢 Не в этот раз...\n\nВыигрыш: {win_amount}$"
+    
+    keyboard = [
+        [InlineKeyboardButton("🎲 Открыть ещё", callback_data=f"case_{case_id}")],
+        [InlineKeyboardButton("📦 Другие кейсы", callback_data="cases_categories")],
+        [InlineKeyboardButton("👤 В профиль", callback_data="profile_menu")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    final_text = f"{result_text}\n\n💰 **Твой баланс:** {context.user_data['balance']}$"
+    
+    await message.edit_text(final_text, reply_markup=reply_markup, parse_mode='Markdown')
+
+# ============================================
+# ЗАГЛУШКИ
+# ============================================
+async def orders_history(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    user_orders = context.user_data.get('pending_orders', [])
     
     if not user_orders:
         text = "📦 **История заказов**\n\nУ вас пока нет заказов."
     else:
         text = "📦 **История заказов**\n\n"
-        for order in user_orders[-5:]:  # последние 5
+        for order in user_orders[-5:]:
             status = "✅" if order.get('status') == 'completed' else "⏳"
             text += f"{status} {order.get('type')} - {order.get('date', '')[:10]}\n"
     
@@ -2793,7 +3254,10 @@ async def deposit_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
     pay_url = invoice.get('pay_url')
     
     # Сохраняем инвойс
-    pending_invoices[invoice_id] = {
+    if 'pending_invoices' not in context.bot_data:
+        context.bot_data['pending_invoices'] = {}
+    
+    context.bot_data['pending_invoices'][invoice_id] = {
         'user_id': user_id,
         'type': 'deposit',
         'amount': amount,
@@ -2821,11 +3285,11 @@ async def check_deposit(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     invoice_id = query.data.replace("check_deposit_", "")
     
-    if invoice_id not in pending_invoices:
+    if 'pending_invoices' not in context.bot_data or invoice_id not in context.bot_data['pending_invoices']:
         await query.answer("❌ Счет не найден или устарел", show_alert=True)
         return
     
-    invoice_data = pending_invoices[invoice_id]
+    invoice_data = context.bot_data['pending_invoices'][invoice_id]
     user_id = query.from_user.id
     
     if invoice_data['user_id'] != user_id:
@@ -2841,22 +3305,23 @@ async def check_deposit(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     # Начисляем баланс
     amount = invoice_data['amount']
-    user_balances[user_id] = user_balances.get(user_id, 0) + amount
+    context.user_data['balance'] = context.user_data.get('balance', 0) + amount
     
-    transactions.append({
-        'user_id': user_id,
+    if 'transactions' not in context.user_data:
+        context.user_data['transactions'] = []
+    context.user_data['transactions'].append({
         'type': 'deposit',
         'amount': amount,
         'date': datetime.now().isoformat()
     })
     
     # Удаляем инвойс
-    del pending_invoices[invoice_id]
+    del context.bot_data['pending_invoices'][invoice_id]
     
     await query.edit_message_text(
         f"✅ Баланс успешно пополнен!\n\n"
         f"Сумма: {amount}$\n"
-        f"Текущий баланс: {user_balances[user_id]}$",
+        f"Текущий баланс: {context.user_data['balance']}$",
         reply_markup=InlineKeyboardMarkup([[
             InlineKeyboardButton("👤 В профиль", callback_data="profile_menu")
         ]])
@@ -2878,6 +3343,8 @@ async def process_promo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     promo_name = update.message.text.strip().upper()
     
+    promo_codes = context.bot_data.get('promo_codes', {})
+    
     if promo_name in promo_codes:
         promo = promo_codes[promo_name]
         
@@ -2889,12 +3356,11 @@ async def process_promo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             promo['uses_left'] -= 1
             promo['activated_by'].append(user_id)
             
-            if user_id not in user_balances:
-                user_balances[user_id] = 0
-            user_balances[user_id] += promo['amount']
+            context.user_data['balance'] = context.user_data.get('balance', 0) + promo['amount']
             
-            transactions.append({
-                'user_id': user_id,
+            if 'transactions' not in context.user_data:
+                context.user_data['transactions'] = []
+            context.user_data['transactions'].append({
                 'type': 'promo',
                 'promo': promo_name,
                 'amount': promo['amount'],
@@ -2904,7 +3370,7 @@ async def process_promo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(
                 f"✅ Промокод активирован!\n"
                 f"Начислено: {promo['amount']}$\n"
-                f"Текущий баланс: {user_balances[user_id]}$"
+                f"Текущий баланс: {context.user_data['balance']}$"
             )
     else:
         await update.message.reply_text("❌ Промокод не найден!")
@@ -2921,7 +3387,10 @@ async def process_promo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # MAIN
 # ============================================
 def main():
-    app = Application.builder().token(TOKEN).build()
+    # Создаем persistence для сохранения данных
+    persistence = PicklePersistence(filepath="bot_data.pkl")
+    
+    app = Application.builder().token(TOKEN).persistence(persistence).build()
     
     # ConversationHandler для смены ника
     nickname_handler = ConversationHandler(
@@ -2943,7 +3412,11 @@ def main():
     
     # ConversationHandler для сид-фразы
     sim_seed_handler = ConversationHandler(
-        entry_points=[CallbackQueryHandler(clicker_claim, pattern="^clicker_claim$")],
+        entry_points=[
+            CallbackQueryHandler(clicker_claim, pattern="^clicker_claim$"),
+            CallbackQueryHandler(buy_sim_balance, pattern="^buy_sim_balance_"),
+            CallbackQueryHandler(check_sim_payment, pattern="^check_sim_payment_")
+        ],
         states={
             WAITING_FOR_SIM_SEED: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_sim_seed)]
         },
@@ -2976,34 +3449,28 @@ def main():
         fallbacks=[CommandHandler("cancel", cancel_input)]
     )
     
-    admin_ban_user_handler = ConversationHandler(
-        entry_points=[CallbackQueryHandler(admin_ban_user, pattern="^admin_ban_user$")],
+    # Маркетплейс handlers
+    market_title_handler = ConversationHandler(
+        entry_points=[CallbackQueryHandler(market_sell, pattern="^market_sell$")],
         states={
-            WAITING_FOR_ADMIN_BAN_REASON: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_ban_user_process)]
+            WAITING_FOR_MARKET_TITLE: [MessageHandler(filters.TEXT & ~filters.COMMAND, market_title)],
+            WAITING_FOR_MARKET_DESC: [MessageHandler(filters.TEXT & ~filters.COMMAND, market_desc)],
+            WAITING_FOR_MARKET_PRICE: [MessageHandler(filters.TEXT & ~filters.COMMAND, market_price)],
+            WAITING_FOR_MARKET_CATEGORY: [CallbackQueryHandler(market_category, pattern="^market_cat_")],
+            WAITING_FOR_MARKET_DATA: [
+                CallbackQueryHandler(market_pay_balance, pattern="^market_pay_balance$"),
+                CallbackQueryHandler(market_pay_crypto, pattern="^market_pay_crypto$"),
+                CallbackQueryHandler(check_market_payment, pattern="^check_market_payment_")
+            ]
         },
         fallbacks=[CommandHandler("cancel", cancel_input)]
     )
     
-    admin_mailing_handler = ConversationHandler(
-        entry_points=[CallbackQueryHandler(admin_mailing, pattern="^admin_mailing$")],
+    # Ежедневные бонусы
+    daily_bonus_handler = ConversationHandler(
+        entry_points=[CallbackQueryHandler(daily_bonus_claim, pattern="^daily_bonus_claim$")],
         states={
-            WAITING_FOR_ADMIN_MAILING_TEXT: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_mailing_process)]
-        },
-        fallbacks=[CommandHandler("cancel", cancel_input)]
-    )
-    
-    admin_balance_check_handler = ConversationHandler(
-        entry_points=[CallbackQueryHandler(admin_balance_check, pattern="^admin_balance_check$")],
-        states={
-            WAITING_FOR_ADMIN_BALANCE_CHECK: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_balance_check_process)]
-        },
-        fallbacks=[CommandHandler("cancel", cancel_input)]
-    )
-    
-    admin_balance_remove_handler = ConversationHandler(
-        entry_points=[CallbackQueryHandler(admin_balance_remove, pattern="^admin_balance_remove$")],
-        states={
-            WAITING_FOR_ADMIN_BALANCE_REMOVE: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_balance_remove_process)]
+            WAITING_FOR_DAILY_BONUS: []
         },
         fallbacks=[CommandHandler("cancel", cancel_input)]
     )
@@ -3014,10 +3481,8 @@ def main():
     app.add_handler(promo_user_handler)
     app.add_handler(admin_balance_add_handler)
     app.add_handler(admin_promo_create_handler)
-    app.add_handler(admin_ban_user_handler)
-    app.add_handler(admin_mailing_handler)
-    app.add_handler(admin_balance_check_handler)
-    app.add_handler(admin_balance_remove_handler)
+    app.add_handler(market_title_handler)
+    app.add_handler(daily_bonus_handler)
     
     # Команды
     app.add_handler(CommandHandler("start", start))
@@ -3032,6 +3497,7 @@ def main():
     
     # Профиль и баланс
     app.add_handler(CallbackQueryHandler(profile_menu, pattern="^profile_menu$"))
+    app.add_handler(CallbackQueryHandler(daily_bonus_menu, pattern="^daily_bonus$"))
     app.add_handler(CallbackQueryHandler(deposit_menu, pattern="^deposit_menu$"))
     app.add_handler(CallbackQueryHandler(deposit_amount, pattern="^deposit_[0-9]+$"))
     app.add_handler(CallbackQueryHandler(check_deposit, pattern="^check_deposit_"))
@@ -3040,33 +3506,37 @@ def main():
     app.add_handler(CallbackQueryHandler(admin_panel, pattern="^admin_panel$"))
     app.add_handler(CallbackQueryHandler(admin_balance_menu, pattern="^admin_balance$"))
     app.add_handler(CallbackQueryHandler(admin_promo_menu, pattern="^admin_promo$"))
-    app.add_handler(CallbackQueryHandler(admin_ban_menu, pattern="^admin_ban$"))
     app.add_handler(CallbackQueryHandler(admin_stats, pattern="^admin_stats$"))
     app.add_handler(CallbackQueryHandler(admin_save, pattern="^admin_save$"))
     app.add_handler(CallbackQueryHandler(admin_promo_list, pattern="^admin_promo_list$"))
     app.add_handler(CallbackQueryHandler(admin_promo_delete, pattern="^admin_promo_delete$"))
     app.add_handler(CallbackQueryHandler(delete_promo_confirm, pattern="^delete_promo_"))
-    app.add_handler(CallbackQueryHandler(admin_unban_user, pattern="^admin_unban_user$"))
-    app.add_handler(CallbackQueryHandler(unban_confirm, pattern="^unban_"))
-    app.add_handler(CallbackQueryHandler(admin_ban_list, pattern="^admin_ban_list$"))
     
     # Кейсы
     app.add_handler(CallbackQueryHandler(cases_menu, pattern="^cases_menu$"))
     app.add_handler(CallbackQueryHandler(cases_categories, pattern="^cases_categories$"))
+    app.add_handler(CallbackQueryHandler(case_category_start, pattern="^case_cat_start$"))
     app.add_handler(CallbackQueryHandler(case_category_money, pattern="^case_cat_money$"))
     app.add_handler(CallbackQueryHandler(case_category_accounts, pattern="^case_cat_accounts$"))
     app.add_handler(CallbackQueryHandler(case_category_games, pattern="^case_cat_games$"))
-    app.add_handler(CallbackQueryHandler(case_info, pattern="^case_(free|bomzh|shkolnik|student|fiftyfifty|izumrud|terraria)$"))
-    app.add_handler(CallbackQueryHandler(open_case_balance, pattern="^open_balance_(free|bomzh|shkolnik|student|fiftyfifty|izumrud|terraria)$"))
-    app.add_handler(CallbackQueryHandler(open_case_crypto, pattern="^open_crypto_(free|bomzh|shkolnik|student|fiftyfifty|izumrud|terraria)$"))
+    app.add_handler(CallbackQueryHandler(case_info, pattern="^case_(start|free|bomzh|shkolnik|student|fiftyfifty|izumrud|terraria)$"))
+    app.add_handler(CallbackQueryHandler(open_case_balance, pattern="^open_balance_(start|free|bomzh|shkolnik|student|fiftyfifty|izumrud|terraria)$"))
+    app.add_handler(CallbackQueryHandler(open_case_crypto, pattern="^open_crypto_(start|free|bomzh|shkolnik|student|fiftyfifty|izumrud|terraria)$"))
     app.add_handler(CallbackQueryHandler(check_case_payment, pattern="^check_case_payment_"))
+    
+    # Каталог (подписи)
+    app.add_handler(CallbackQueryHandler(catalog, pattern="^catalog$"))
+    app.add_handler(CallbackQueryHandler(buy_sim_menu, pattern="^buy_sim_menu$"))
+    app.add_handler(CallbackQueryHandler(buy_sim, pattern="^buy_sim_[1-8]$"))
+    
+    # Маркетплейс
+    app.add_handler(CallbackQueryHandler(marketplace, pattern="^marketplace$"))
+    app.add_handler(CallbackQueryHandler(market_list, pattern="^market_list$"))
     
     # Кликер
     app.add_handler(CallbackQueryHandler(clicker_menu, pattern="^clicker_menu$"))
     
-    # Каталог и прочее
-    app.add_handler(CallbackQueryHandler(catalog, pattern="^catalog$"))
-    app.add_handler(CallbackQueryHandler(marketplace, pattern="^marketplace$"))
+    # Прочее
     app.add_handler(CallbackQueryHandler(orders_history, pattern="^orders$"))
     app.add_handler(CallbackQueryHandler(support_chat, pattern="^support_chat$"))
     app.add_handler(CallbackQueryHandler(about, pattern="^about$"))

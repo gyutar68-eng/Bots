@@ -116,7 +116,7 @@ user_stats = {}
 banned_users = set()
 case_cooldowns = {}
 transactions = []
-pending_invoices = {}  # {invoice_id: {'user_id': id, 'type': 'case/gift/sim', 'item_id': id, 'amount': price}}
+pending_invoices = {}  # {invoice_id: {'user_id': id, 'type': 'case', 'item_id': id, 'amount': price}}
 
 # ПРОМОКОДЫ
 promo_codes = {}
@@ -309,42 +309,6 @@ CASES = {
 }
 
 # ============================================
-# ПОДАРКИ (ОТДЕЛЬНО ОТ КЕЙСОВ)
-# ============================================
-GIFTS = {
-    'mini': {
-        'name': '🎁 Мини-подарок',
-        'price': 3.0,
-        'description': 'Небольшой сюрприз с шансом на призы!',
-        'items': [
-            {'type': 'promo', 'min': 1.0, 'max': 4.0, 'chance': 70, 'name': 'Промокод 1-4$'},
-            {'type': 'case', 'cases': ['free', 'bomzh', 'shkolnik'], 'chance': 25, 'name': 'Случайный кейс'},
-            {'type': 'sim', 'quantity': 1, 'chance': 5, 'name': 'Подпись сим-карты'}
-        ]
-    },
-    'xmas': {
-        'name': '🎄 Подарок на рождество',
-        'price': 7.5,
-        'description': 'Праздничный подарок с увеличенными шансами!',
-        'items': [
-            {'type': 'promo', 'min': 4.0, 'max': 9.0, 'chance': 60, 'name': 'Промокод 4-9$'},
-            {'type': 'case', 'cases': ['fiftyfifty', 'student'], 'chance': 38, 'name': 'Кейс 50/50 или Студент'},
-            {'type': 'sim', 'quantity': 2, 'chance': 2, 'name': '2 подписи сим-карт'}
-        ]
-    },
-    'hyper': {
-        'name': '💥 Гипер Подарок',
-        'price': 15.0,
-        'description': 'Мега подарок с лучшими призами!',
-        'items': [
-            {'type': 'promo', 'min': 10.0, 'max': 20.0, 'chance': 50, 'name': 'Промокод 10-20$'},
-            {'type': 'case', 'cases': ['izumrud', 'student'], 'chance': 40, 'name': 'Изумрудный или Студент'},
-            {'type': 'sim', 'quantity': 3, 'chance': 10, 'name': '3 подписи сим-карт'}
-        ]
-    }
-}
-
-# ============================================
 # РАЗДЕЛЫ FAQ
 # ============================================
 FAQ_SECTIONS = [
@@ -445,30 +409,6 @@ FAQ_SECTIONS = [
     },
     {
         "id": 4, 
-        "name": "🎁 Подарки", 
-        "content": """🎁 **ПОДАРКИ - СЮРПРИЗ В КАЖДОМ!**
-
-Покупай подарки и получай случайные призы!
-
-🔹 **Мини-подарок (3$):**
-• Промокод от 1$ до 4$
-• Случайный кейс (Бесплатный, Бомж, Школьник)
-• Подпись сим-карты (редко)
-
-🔹 **Подарок на рождество (7.5$):**
-• Промокод от 4$ до 9$
-• Кейс 50/50 или Студент-кейс
-• 2 подписи сим-карт (очень редко)
-
-🔹 **Гипер Подарок (15$):**
-• Промокод от 10$ до 20$
-• Изумрудный или Студент-кейс
-• 3 подписи сим-карт
-
-🎰 **Покупай подарки и получай сюрпризы!**"""
-    },
-    {
-        "id": 5, 
         "name": "💰 Баланс", 
         "content": """💰 **БАЛАНС И ПОПОЛНЕНИЕ**
 
@@ -487,7 +427,6 @@ FAQ_SECTIONS = [
 🔹 **На что тратить баланс:**
 • Покупка кейсов
 • Товары на маркетплейсе
-• Подарки
 • Подписи сим-карт (4$/шт)
 
 🔹 **Вывод средств:**
@@ -499,7 +438,7 @@ FAQ_SECTIONS = [
 💳 **Пополнить баланс можно в разделе "Профиль"!**"""
     },
     {
-        "id": 6, 
+        "id": 5, 
         "name": "🎁 Промокоды", 
         "content": """🎁 **ПРОМОКОДЫ**
 
@@ -510,23 +449,21 @@ FAQ_SECTIONS = [
 • В канале с промокодами @SlogsPromo
 • От администратора @YungTrezinny
 • В конкурсах и розыгрышах
-• В подарках!
 
 🔹 **Как активировать:**
 1. Зайди в раздел **"Профиль"**
 2. Нажми **"Активировать промокод"**
-3. Введи код (например: TERRARIA2026)
+3. Введи код
 4. Получи деньги на баланс!
 
 🔹 **Правила:**
 • Один промокод можно использовать ограниченное число раз
 • Нельзя активировать дважды с одного аккаунта
-• Следи за новыми промокодами каждый день!
 
 💎 **Активируй промокод прямо сейчас!**"""
     },
     {
-        "id": 7, 
+        "id": 6, 
         "name": "🏪 Маркетплейс", 
         "content": """🏪 **ТОРГОВАЯ ПЛОЩАДКА**
 
@@ -561,7 +498,7 @@ P2P маркетплейс, где пользователи продают др�
 🔥 **Начни продавать уже сегодня!**"""
     },
     {
-        "id": 8, 
+        "id": 7, 
         "name": "📱 Подписи сим-карт", 
         "content": """📱 **ПОДПИСИ СИМ-КАРТ**
 
@@ -598,7 +535,7 @@ P2P маркетплейс, где пользователи продают др�
 📌 **Покупай подписи в разделе "Каталог"!**"""
     },
     {
-        "id": 9, 
+        "id": 8, 
         "name": "🛡 Гарантии", 
         "content": """🛡 **ГАРАНТИИ И ВОЗВРАТ**
 
@@ -637,7 +574,7 @@ P2P маркетплейс, где пользователи продают др�
 💎 **Работаем честно и прозрачно!**"""
     },
     {
-        "id": 10, 
+        "id": 9, 
         "name": "🔒 Безопасность", 
         "content": """🔒 **ПРАВИЛА БЕЗОПАСНОСТИ**
 
@@ -674,7 +611,7 @@ P2P маркетплейс, где пользователи продают др�
 📞 **По любым вопросам: @YungTrezinny**"""
     },
     {
-        "id": 11, 
+        "id": 10, 
         "name": "📊 Статистика", 
         "content": """📊 **СТАТИСТИКА И ПРОФИЛЬ**
 
@@ -695,7 +632,6 @@ P2P маркетплейс, где пользователи продают др�
 
 🔹 **Как улучшить статистику:**
 • Чаще открывайте кейсы
-• Покупайте подарки
 • Следите за промокодами
 • Участвуйте в конкурсах
 
@@ -708,7 +644,7 @@ P2P маркетплейс, где пользователи продают др�
 👤 **Проверь свою статистику прямо сейчас!**"""
     },
     {
-        "id": 12, 
+        "id": 11, 
         "name": "💬 Поддержка", 
         "content": """💬 **СЛУЖБА ПОДДЕРЖКИ**
 
@@ -728,7 +664,6 @@ P2P маркетплейс, где пользователи продают др�
 • Споры по сделкам
 • Технические проблемы
 • Вопросы по кейсам
-• Вопросы по подаркам
 • Проблемы с кликером
 • Активация промокодов
 • Выигрыш игры Terraria
@@ -755,7 +690,7 @@ P2P маркетплейс, где пользователи продают др�
 💬 **Мы ценим каждого клиента!**"""
     },
     {
-        "id": 13, 
+        "id": 12, 
         "name": "📞 Контакты", 
         "content": """📞 **КОНТАКТЫ И СОЦСЕТИ**
 
@@ -2210,152 +2145,6 @@ async def case_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.edit_message_text(text, reply_markup=reply_markup, parse_mode='Markdown')
 
 # ============================================
-# ПОДАРКИ (ОТДЕЛЬНОЕ МЕНЮ)
-# ============================================
-async def gifts_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    
-    user_id = query.from_user.id
-    balance = user_balances.get(user_id, 0)
-    
-    text = f"🎁 **ПОДАРКИ**\n\n"
-    text += f"💰 Твой баланс: {balance}$\n\n"
-    text += "Покупай подарки и получай случайные призы!\n\n"
-    
-    keyboard = []
-    for gift_id, gift in GIFTS.items():
-        if gift['items']:
-            keyboard.append([InlineKeyboardButton(
-                f"{gift['name']} - {gift['price']}$",
-                callback_data=f"gift_{gift_id}"
-            )])
-    
-    keyboard.append([InlineKeyboardButton("◀️ Назад", callback_data="back_to_menu")])
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    await query.edit_message_text(text, reply_markup=reply_markup, parse_mode='Markdown')
-
-async def gift_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    
-    gift_id = query.data.replace("gift_", "")
-    gift = GIFTS.get(gift_id)
-    
-    if not gift:
-        return
-    
-    text = f"{gift['name']}\n\n"
-    text += f"{gift['description']}\n\n"
-    text += f"💰 **Цена:** {gift['price']}$\n\n"
-    text += "**Что можно выиграть:**\n"
-    
-    for item in gift['items']:
-        if item['type'] == 'promo':
-            text += f"• Промокод от {item['min']}$ до {item['max']}$ — {item['chance']}%\n"
-        elif item['type'] == 'case':
-            cases_str = ', '.join([CASES.get(c, {}).get('name', c) for c in item['cases']])
-            text += f"• Случайный кейс ({cases_str}) — {item['chance']}%\n"
-        elif item['type'] == 'sim':
-            text += f"• {item['quantity']} подпись(и) сим-карт — {item['chance']}%\n"
-    
-    keyboard = [
-        [InlineKeyboardButton("🎁 КУПИТЬ ЗА БАЛАНС", callback_data=f"buy_gift_balance_{gift_id}")],
-        [InlineKeyboardButton("💳 КУПИТЬ ЗА USDT", callback_data=f"buy_gift_crypto_{gift_id}")],
-        [InlineKeyboardButton("◀️ Назад", callback_data="gifts_menu")]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    await query.edit_message_text(text, reply_markup=reply_markup, parse_mode='Markdown')
-
-async def buy_gift_balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    
-    gift_id = query.data.replace("buy_gift_balance_", "")
-    gift = GIFTS.get(gift_id)
-    
-    if not gift:
-        return
-    
-    user_id = query.from_user.id
-    price = gift['price']
-    
-    if user_balances.get(user_id, 0) < price:
-        await query.answer("❌ Недостаточно средств на балансе!", show_alert=True)
-        return
-    
-    user_balances[user_id] -= price
-    
-    rand = random.random() * 100
-    cumulative = 0
-    win_item = None
-    
-    for item in gift['items']:
-        cumulative += item['chance']
-        if rand <= cumulative:
-            win_item = item
-            break
-    
-    result_text = f"🎁 **Результат подарка**\n\n"
-    
-    if win_item['type'] == 'promo':
-        promo_amount = round(random.uniform(win_item['min'], win_item['max']), 2)
-        promo_name = f"GIFT_{uuid.uuid4().hex[:8].upper()}"
-        
-        promo_codes[promo_name] = {
-            'amount': promo_amount,
-            'uses_left': 1,
-            'created_by': 'gift_system',
-            'created_at': datetime.now().isoformat(),
-            'activated_by': []
-        }
-        
-        result_text += f"Вы выиграли промокод **{promo_name}** на {promo_amount}$!\n\n"
-        result_text += "Активируйте его в разделе профиля."
-        
-    elif win_item['type'] == 'case':
-        case_id = random.choice(win_item['cases'])
-        case = CASES.get(case_id)
-        result_text += f"Вы выиграли кейс **{case['name']}**!\n\n"
-        result_text += "Перейдите в раздел кейсов, чтобы открыть его."
-        
-    elif win_item['type'] == 'sim':
-        result_text += f"Вы выиграли {win_item['quantity']} подпись(и) сим-карт!\n\n"
-        result_text += "Напишите администратору @YungTrezinny для получения."
-        
-        admin_msg = (
-            f"🎁 ВЫИГРЫШ ПОДАРКА\n\n"
-            f"Пользователь: {query.from_user.first_name} (ID: {user_id})\n"
-            f"Подарок: {gift['name']}\n"
-            f"Приз: {win_item['quantity']} подписей"
-        )
-        try:
-            await context.bot.send_message(chat_id=ADMIN_ID, text=admin_msg)
-        except:
-            pass
-    
-    transactions.append({
-        'user_id': user_id,
-        'type': 'gift_purchase',
-        'gift': gift['name'],
-        'prize': win_item['type'],
-        'price': price,
-        'date': datetime.now().isoformat()
-    })
-    
-    if user_id not in user_stats:
-        user_stats[user_id] = {'spent': 0, 'opened_cases': 0, 'won': 0, 'nickname': query.from_user.first_name, 'join_date': datetime.now().isoformat()}
-    
-    user_stats[user_id]['spent'] += price
-    
-    keyboard = [[InlineKeyboardButton("◀️ К подаркам", callback_data="gifts_menu")]]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    await query.edit_message_text(result_text, reply_markup=reply_markup, parse_mode='Markdown')
-
-# ============================================
 # КРИПТО-ОПЛАТА ДЛЯ КЕЙСОВ
 # ============================================
 async def open_case_crypto(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -2557,164 +2346,6 @@ async def check_case_payment(update: Update, context: ContextTypes.DEFAULT_TYPE)
     final_text = f"{result_text}\n\n💰 **Твой баланс:** {user_balances[user_id]}$"
     
     await message.edit_text(final_text, reply_markup=reply_markup, parse_mode='Markdown')
-
-# ============================================
-# КРИПТО-ОПЛАТА ДЛЯ ПОДАРКОВ
-# ============================================
-async def buy_gift_crypto(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    
-    gift_id = query.data.replace("buy_gift_crypto_", "")
-    gift = GIFTS.get(gift_id)
-    
-    if not gift:
-        return
-    
-    user_id = query.from_user.id
-    price = gift['price']
-    
-    # Создаем инвойс
-    invoice = await create_crypto_invoice(price, f"Gift: {gift['name']}", user_id)
-    
-    if not invoice:
-        await query.edit_message_text(
-            "❌ Ошибка создания счета. Попробуйте позже.",
-            reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton("◀️ Назад", callback_data=f"gift_{gift_id}")
-            ]])
-        )
-        return
-    
-    invoice_id = invoice.get('invoice_id')
-    pay_url = invoice.get('pay_url')
-    
-    # Сохраняем инвойс
-    pending_invoices[invoice_id] = {
-        'user_id': user_id,
-        'type': 'gift',
-        'item_id': gift_id,
-        'amount': price,
-        'date': datetime.now().isoformat()
-    }
-    
-    text = (
-        f"💳 **ОПЛАТА ПОДАРКА**\n\n"
-        f"Подарок: {gift['name']}\n"
-        f"Сумма: {price} USDT\n\n"
-        f"Для оплаты нажмите кнопку ниже и отправьте {price} USDT"
-    )
-    
-    keyboard = [
-        [InlineKeyboardButton("💳 ОПЛАТИТЬ", url=pay_url)],
-        [InlineKeyboardButton("✅ Я ОПЛАТИЛ", callback_data=f"check_gift_payment_{invoice_id}")],
-        [InlineKeyboardButton("❌ Отмена", callback_data=f"gift_{gift_id}")]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    await query.edit_message_text(text, reply_markup=reply_markup, parse_mode='Markdown')
-
-async def check_gift_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    
-    invoice_id = query.data.replace("check_gift_payment_", "")
-    
-    if invoice_id not in pending_invoices:
-        await query.answer("❌ Счет не найден или устарел", show_alert=True)
-        return
-    
-    invoice_data = pending_invoices[invoice_id]
-    user_id = query.from_user.id
-    
-    if invoice_data['user_id'] != user_id:
-        await query.answer("❌ Это не ваш счет", show_alert=True)
-        return
-    
-    # Проверяем оплату
-    paid = await check_crypto_payment(invoice_id)
-    
-    if not paid:
-        await query.answer("❌ Оплата не найдена", show_alert=True)
-        return
-    
-    # Оплачено - покупаем подарок
-    gift_id = invoice_data['item_id']
-    gift = GIFTS.get(gift_id)
-    
-    if not gift:
-        return
-    
-    # Удаляем инвойс
-    del pending_invoices[invoice_id]
-    
-    # Покупаем подарок
-    rand = random.random() * 100
-    cumulative = 0
-    win_item = None
-    
-    for item in gift['items']:
-        cumulative += item['chance']
-        if rand <= cumulative:
-            win_item = item
-            break
-    
-    result_text = f"🎁 **Результат подарка**\n\n"
-    
-    if win_item['type'] == 'promo':
-        promo_amount = round(random.uniform(win_item['min'], win_item['max']), 2)
-        promo_name = f"GIFT_{uuid.uuid4().hex[:8].upper()}"
-        
-        promo_codes[promo_name] = {
-            'amount': promo_amount,
-            'uses_left': 1,
-            'created_by': 'gift_system',
-            'created_at': datetime.now().isoformat(),
-            'activated_by': []
-        }
-        
-        result_text += f"Вы выиграли промокод **{promo_name}** на {promo_amount}$!\n\n"
-        result_text += "Активируйте его в разделе профиля."
-        
-    elif win_item['type'] == 'case':
-        case_id = random.choice(win_item['cases'])
-        case = CASES.get(case_id)
-        result_text += f"Вы выиграли кейс **{case['name']}**!\n\n"
-        result_text += "Перейдите в раздел кейсов, чтобы открыть его."
-        
-    elif win_item['type'] == 'sim':
-        result_text += f"Вы выиграли {win_item['quantity']} подпись(и) сим-карт!\n\n"
-        result_text += "Напишите администратору @YungTrezinny для получения."
-        
-        admin_msg = (
-            f"🎁 ВЫИГРЫШ ПОДАРКА\n\n"
-            f"Пользователь: {query.from_user.first_name} (ID: {user_id})\n"
-            f"Подарок: {gift['name']}\n"
-            f"Приз: {win_item['quantity']} подписей"
-        )
-        try:
-            await context.bot.send_message(chat_id=ADMIN_ID, text=admin_msg)
-        except:
-            pass
-    
-    transactions.append({
-        'user_id': user_id,
-        'type': 'gift_purchase_crypto',
-        'gift': gift['name'],
-        'prize': win_item['type'],
-        'price': invoice_data['amount'],
-        'date': datetime.now().isoformat()
-    })
-    
-    if user_id not in user_stats:
-        user_stats[user_id] = {'spent': 0, 'opened_cases': 0, 'won': 0, 'nickname': query.from_user.first_name, 'join_date': datetime.now().isoformat()}
-    
-    user_stats[user_id]['spent'] += invoice_data['amount']
-    
-    keyboard = [[InlineKeyboardButton("◀️ К подаркам", callback_data="gifts_menu")]]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    await query.edit_message_text(result_text, reply_markup=reply_markup, parse_mode='Markdown')
 
 # ============================================
 # ОТКРЫТИЕ КЕЙСА С БАЛАНСА
@@ -3015,7 +2646,6 @@ async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [InlineKeyboardButton("👤 Мой профиль", callback_data="profile_menu")],
         [InlineKeyboardButton("🎲 Кейсы", callback_data="cases_menu")],
-        [InlineKeyboardButton("🎁 Подарки", callback_data="gifts_menu")],
         [InlineKeyboardButton("🛍 Наш каталог", callback_data="catalog")],
         [InlineKeyboardButton("🏪 Торговая площадка", callback_data="marketplace")],
         [InlineKeyboardButton("🖱 Кликер (бесплатно)", callback_data="clicker_menu")],
@@ -3031,7 +2661,6 @@ async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"💰 **Твой баланс:** {balance}$\n\n"
         f"🔥 **НОВИНКА:** Изумрудный кейс (10$) и Terraria (1.5$)!\n"
         f"🖱 **Кликер** - нажми 54999 раз и получи подпись бесплатно!\n"
-        f"🎁 **Подарки** - сюрпризы с разными призами!\n"
         f"💳 **Оплата** с баланса или криптовалютой\n"
         f"🎁 **Промокоды:** @SlogsPromo"
     )
@@ -3431,13 +3060,6 @@ def main():
     app.add_handler(CallbackQueryHandler(open_case_balance, pattern="^open_balance_(free|bomzh|shkolnik|student|fiftyfifty|izumrud|terraria)$"))
     app.add_handler(CallbackQueryHandler(open_case_crypto, pattern="^open_crypto_(free|bomzh|shkolnik|student|fiftyfifty|izumrud|terraria)$"))
     app.add_handler(CallbackQueryHandler(check_case_payment, pattern="^check_case_payment_"))
-    
-    # Подарки
-    app.add_handler(CallbackQueryHandler(gifts_menu, pattern="^gifts_menu$"))
-    app.add_handler(CallbackQueryHandler(gift_info, pattern="^gift_(mini|xmas|hyper)$"))
-    app.add_handler(CallbackQueryHandler(buy_gift_balance, pattern="^buy_gift_balance_(mini|xmas|hyper)$"))
-    app.add_handler(CallbackQueryHandler(buy_gift_crypto, pattern="^buy_gift_crypto_(mini|xmas|hyper)$"))
-    app.add_handler(CallbackQueryHandler(check_gift_payment, pattern="^check_gift_payment_"))
     
     # Кликер
     app.add_handler(CallbackQueryHandler(clicker_menu, pattern="^clicker_menu$"))

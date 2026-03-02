@@ -25,7 +25,7 @@ WAITING_FOR_MARKET_TITLE = 3
 WAITING_FOR_MARKET_DESC = 4
 WAITING_FOR_MARKET_PRICE = 5
 WAITING_FOR_MARKET_CATEGORY = 6
-WAITING_FOR_MARKET_DATA = 7
+WAITING_FOR_MARKET_PAYMENT = 7
 WAITING_FOR_NICKNAME = 8
 WAITING_FOR_BAN_REASON = 9
 WAITING_FOR_CAPTCHA = 10
@@ -43,11 +43,8 @@ WAITING_FOR_ADMIN_MAILING = 21
 WAITING_FOR_ADMIN_MAILING_TEXT = 22
 WAITING_FOR_ADMIN_BALANCE_CHECK = 23
 WAITING_FOR_ADMIN_BALANCE_REMOVE = 24
-WAITING_FOR_MARKET_ITEM_ID = 25
-WAITING_FOR_SIM_OPERATOR = 26
-WAITING_FOR_DAILY_BONUS = 27
-WAITING_FOR_MARKET_PAYMENT = 28
-WAITING_FOR_MARKET_COMMISSION = 29
+WAITING_FOR_SIM_OPERATOR = 25
+WAITING_FOR_DAILY_BONUS = 26
 
 # Токен и канал из переменных окружения
 TOKEN = os.getenv("BOT_TOKEN")
@@ -823,11 +820,14 @@ async def cancel_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ]])
         )
     
+    # Очищаем только временные данные пользователя
     context.user_data.pop("current_order", None)
     context.user_data.pop("awaiting_captcha", None)
     context.user_data.pop("market_temp", None)
-    context.user_data.pop("sim_temp", None)
+    context.user_data.pop("commission_item", None)
     context.user_data.pop("buy_item", None)
+    context.user_data.pop("buy_invoice", None)
+    context.user_data.pop("sim_temp", None)
     
     return ConversationHandler.END
 
@@ -2305,13 +2305,34 @@ async def check_case_payment(update: Update, context: ContextTypes.DEFAULT_TYPE)
     await message.edit_text(final_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
 
 # ============================================
-# МАРКЕТПЛЕЙС (ПОЛНОСТЬЮ ПЕРЕПИСАННЫЙ)
+# МАРКЕТПЛЕЙС (ИСПРАВЛЕННАЯ ВЕРСИЯ)
 # ============================================
+
+async def force_end_conversation(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Принудительно завершает диалог и возвращает в маркетплейс"""
+    if update.callback_query:
+        await update.callback_query.answer()
+    
+    # Очищаем временные данные
+    context.user_data.pop("market_temp", None)
+    context.user_data.pop("commission_item", None)
+    context.user_data.pop("buy_item", None)
+    context.user_data.pop("buy_invoice", None)
+    
+    # Возвращаемся в маркетплейс
+    await marketplace(update, context)
+    return ConversationHandler.END
+
 async def marketplace(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     
-    # Инициализируем хранилище товаров
+    # Очищаем временные данные при входе
+    context.user_data.pop("market_temp", None)
+    context.user_data.pop("commission_item", None)
+    context.user_data.pop("buy_item", None)
+    context.user_data.pop("buy_invoice", None)
+    
     if 'market_items' not in context.bot_data:
         context.bot_data['market_items'] = {}
         context.bot_data['next_item_id'] = 1
@@ -2347,6 +2368,43 @@ async def marketplace(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("➕ Продать товар", callback_data="market_sell")],
         [InlineKeyboardButton("📊 Мои продажи", callback_data="my_sales")],
         [InlineKeyboardButton("◀️ Назад", callback_data="back_to_menu")]
+    ]
+    
+    await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
+
+async def my_sales(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    user_id = query.from_user.id
+    market_items = context.bot_data.get('market_items', {})
+    
+    my_active = {k: v for k, v in market_items.items() if v['seller_id'] == user_id and v['status'] == 'active'}
+    my_sold = {k: v for k, v in market_items.items() if v['seller_id'] == user_id and v['status'] == 'sold'}
+    
+    text = (
+        f"📊 **МОИ ПРОДАЖИ**\n"
+        f"▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰\n\n"
+    )
+    
+    if my_active:
+        text += "**📦 Активные товары:**\n"
+        for item_id, item in list(my_active.items())[:5]:
+            text += f"• {item['title']} - {item['price']} USDT\n"
+        text += f"\nВсего: {len(my_active)} товаров\n\n"
+    else:
+        text += "📦 У вас нет активных товаров\n\n"
+    
+    if my_sold:
+        text += "**📈 Проданные товары:**\n"
+        for item_id, item in list(my_sold.items())[-5:]:
+            text += f"• {item['title']} - {item['price']} USDT\n"
+    else:
+        text += "📈 Пока нет продаж\n"
+    
+    keyboard = [
+        [InlineKeyboardButton("➕ Продать товар", callback_data="market_sell")],
+        [InlineKeyboardButton("◀️ Назад", callback_data="marketplace")]
     ]
     
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
@@ -2684,48 +2742,13 @@ async def market_confirm_buy(update: Update, context: ContextTypes.DEFAULT_TYPE)
     context.user_data.pop('buy_invoice', None)
     context.user_data.pop('buy_item', None)
 
-async def my_sales(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    
-    user_id = query.from_user.id
-    market_items = context.bot_data.get('market_items', {})
-    
-    my_active = {k: v for k, v in market_items.items() if v['seller_id'] == user_id and v['status'] == 'active'}
-    my_sold = {k: v for k, v in market_items.items() if v['seller_id'] == user_id and v['status'] == 'sold'}
-    
-    text = (
-        f"📊 **МОИ ПРОДАЖИ**\n"
-        f"▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰\n\n"
-    )
-    
-    if my_active:
-        text += "**📦 Активные товары:**\n"
-        for item_id, item in list(my_active.items())[:5]:
-            text += f"• {item['title']} - {item['price']} USDT\n"
-        text += f"\nВсего: {len(my_active)} товаров\n\n"
-    else:
-        text += "📦 У вас нет активных товаров\n\n"
-    
-    if my_sold:
-        text += "**📈 Проданные товары:**\n"
-        for item_id, item in list(my_sold.items())[-5:]:
-            text += f"• {item['title']} - {item['price']} USDT\n"
-    else:
-        text += "📈 Пока нет продаж\n"
-    
-    keyboard = [
-        [InlineKeyboardButton("➕ Продать товар", callback_data="market_sell")],
-        [InlineKeyboardButton("◀️ Назад", callback_data="marketplace")]
-    ]
-    
-    await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
-
 async def market_sell(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     
-    context.user_data.pop('market_temp', None)
+    # Очищаем старые данные перед началом новой продажи
+    context.user_data.pop("market_temp", None)
+    context.user_data.pop("commission_item", None)
     
     text = (
         "➕ **ПРОДАЖА ТОВАРА**\n"
@@ -2737,11 +2760,24 @@ async def market_sell(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.edit_message_text(
         text,
         reply_markup=InlineKeyboardMarkup([[
-            InlineKeyboardButton("❌ Отмена", callback_data="marketplace")
+            InlineKeyboardButton("❌ Отмена", callback_data="market_cancel_sell")
         ]]),
         parse_mode='Markdown'
     )
     return WAITING_FOR_MARKET_TITLE
+
+async def market_cancel_sell(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Отмена продажи - принудительный выход"""
+    query = update.callback_query
+    await query.answer()
+    
+    # Очищаем временные данные
+    context.user_data.pop("market_temp", None)
+    context.user_data.pop("commission_item", None)
+    
+    # Принудительно завершаем диалог
+    await marketplace(update, context)
+    return ConversationHandler.END
 
 async def market_title(update: Update, context: ContextTypes.DEFAULT_TYPE):
     title = update.message.text.strip()
@@ -2762,7 +2798,7 @@ async def market_title(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         text,
         reply_markup=InlineKeyboardMarkup([[
-            InlineKeyboardButton("❌ Отмена", callback_data="marketplace")
+            InlineKeyboardButton("❌ Отмена", callback_data="market_cancel_sell")
         ]]),
         parse_mode='Markdown'
     )
@@ -2787,7 +2823,7 @@ async def market_desc(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         text,
         reply_markup=InlineKeyboardMarkup([[
-            InlineKeyboardButton("❌ Отмена", callback_data="marketplace")
+            InlineKeyboardButton("❌ Отмена", callback_data="market_cancel_sell")
         ]]),
         parse_mode='Markdown'
     )
@@ -2817,7 +2853,7 @@ async def market_price(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"{cat['emoji']} {cat['name']} - {cat['desc']}",
             callback_data=f"market_cat_{cat['id']}"
         )])
-    keyboard.append([InlineKeyboardButton("❌ Отмена", callback_data="marketplace")])
+    keyboard.append([InlineKeyboardButton("❌ Отмена", callback_data="market_cancel_sell")])
     
     await update.message.reply_text(
         text,
@@ -2860,7 +2896,7 @@ async def market_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [InlineKeyboardButton("💰 Оплатить с баланса", callback_data="market_pay_commission_balance")],
         [InlineKeyboardButton("💳 Оплатить криптой", callback_data="market_pay_commission_crypto")],
-        [InlineKeyboardButton("❌ Отмена", callback_data="marketplace")]
+        [InlineKeyboardButton("❌ Отмена", callback_data="market_cancel_sell")]
     ]
     
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
@@ -2873,7 +2909,7 @@ async def market_pay_commission_balance(update: Update, context: ContextTypes.DE
     commission_data = context.user_data.get('commission_item')
     if not commission_data:
         await query.answer("❌ Ошибка, начни заново", show_alert=True)
-        return ConversationHandler.END
+        return await force_end_conversation(update, context)
     
     commission = commission_data['commission']
     balance = context.user_data.get('balance', 0)
@@ -2907,6 +2943,7 @@ async def market_pay_commission_balance(update: Update, context: ContextTypes.DE
     context.bot_data['market_items'] = market_items
     context.bot_data['next_item_id'] = next_id + 1
     
+    # Очищаем временные данные
     context.user_data.pop('market_temp', None)
     context.user_data.pop('commission_item', None)
     
@@ -2931,7 +2968,7 @@ async def market_pay_commission_crypto(update: Update, context: ContextTypes.DEF
     commission_data = context.user_data.get('commission_item')
     if not commission_data:
         await query.answer("❌ Ошибка, начни заново", show_alert=True)
-        return ConversationHandler.END
+        return await force_end_conversation(update, context)
     
     commission = commission_data['commission']
     user_id = query.from_user.id
@@ -2942,7 +2979,7 @@ async def market_pay_commission_crypto(update: Update, context: ContextTypes.DEF
         await query.edit_message_text(
             "❌ Ошибка создания счета. Попробуйте позже.",
             reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton("◀️ Назад", callback_data="marketplace")
+                InlineKeyboardButton("◀️ Назад", callback_data="market_cancel_sell")
             ]])
         )
         return WAITING_FOR_MARKET_PAYMENT
@@ -2971,7 +3008,7 @@ async def market_pay_commission_crypto(update: Update, context: ContextTypes.DEF
     keyboard = [
         [InlineKeyboardButton("💳 ОПЛАТИТЬ", url=pay_url)],
         [InlineKeyboardButton("✅ Я ОПЛАТИЛ", callback_data=f"check_market_commission_{invoice_id}")],
-        [InlineKeyboardButton("❌ Отмена", callback_data="marketplace")]
+        [InlineKeyboardButton("❌ Отмена", callback_data="market_cancel_sell")]
     ]
     
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
@@ -3803,7 +3840,10 @@ def main():
                 CallbackQueryHandler(check_market_commission, pattern="^check_market_commission_")
             ]
         },
-        fallbacks=[CommandHandler("cancel", cancel_input)],
+        fallbacks=[
+            CallbackQueryHandler(market_cancel_sell, pattern="^market_cancel_sell$"),
+            CommandHandler("cancel", cancel_input)
+        ],
         per_message=False
     )
     
@@ -3879,6 +3919,7 @@ def main():
     app.add_handler(CallbackQueryHandler(market_buy_balance, pattern="^market_buy_balance$"))
     app.add_handler(CallbackQueryHandler(market_buy_crypto, pattern="^market_buy_crypto$"))
     app.add_handler(CallbackQueryHandler(market_confirm_buy, pattern="^market_confirm_buy_"))
+    app.add_handler(CallbackQueryHandler(market_cancel_sell, pattern="^market_cancel_sell$"))
     
     # Кликер
     app.add_handler(CallbackQueryHandler(clicker_menu, pattern="^clicker_menu$"))

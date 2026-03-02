@@ -2305,7 +2305,7 @@ async def check_case_payment(update: Update, context: ContextTypes.DEFAULT_TYPE)
     await message.edit_text(final_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
 
 # ============================================
-# МАРКЕТПЛЕЙС (ИСПРАВЛЕННАЯ ВЕРСИЯ)
+# МАРКЕТПЛЕЙС (ИСПРАВЛЕННАЯ ВЕРСИЯ - НЕ ПЕРЕСЕКАЕТСЯ С ПРОМОКОДАМИ)
 # ============================================
 
 async def force_end_conversation(update: Update, context: ContextTypes.DEFAULT_TYPE):

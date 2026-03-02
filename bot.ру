@@ -18,33 +18,35 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Состояния для ConversationHandler
+# Состояния для ConversationHandler (обычные)
 WAITING_FOR_SIM_SEED = 1
 WAITING_FOR_SUPPORT_MESSAGE = 2
-WAITING_FOR_MARKET_TITLE = 3
-WAITING_FOR_MARKET_DESC = 4
-WAITING_FOR_MARKET_PRICE = 5
-WAITING_FOR_MARKET_CATEGORY = 6
-WAITING_FOR_MARKET_PAYMENT = 7
-WAITING_FOR_NICKNAME = 8
-WAITING_FOR_BAN_REASON = 9
-WAITING_FOR_CAPTCHA = 10
-WAITING_FOR_PROMO_NAME = 11
-WAITING_FOR_PROMO_AMOUNT = 12
-WAITING_FOR_PROMO_USES = 13
-WAITING_FOR_CUSTOM_DEPOSIT = 14
-WAITING_FOR_ADMIN_USER_ID = 15
-WAITING_FOR_ADMIN_AMOUNT = 16
-WAITING_FOR_ADMIN_PROMO_NAME = 17
-WAITING_FOR_ADMIN_PROMO_AMOUNT = 18
-WAITING_FOR_ADMIN_PROMO_USES = 19
-WAITING_FOR_ADMIN_BAN_REASON = 20
-WAITING_FOR_ADMIN_MAILING = 21
-WAITING_FOR_ADMIN_MAILING_TEXT = 22
-WAITING_FOR_ADMIN_BALANCE_CHECK = 23
-WAITING_FOR_ADMIN_BALANCE_REMOVE = 24
-WAITING_FOR_SIM_OPERATOR = 25
-WAITING_FOR_DAILY_BONUS = 26
+WAITING_FOR_NICKNAME = 3
+WAITING_FOR_BAN_REASON = 4
+WAITING_FOR_CAPTCHA = 5
+WAITING_FOR_PROMO_NAME = 6
+WAITING_FOR_PROMO_AMOUNT = 7
+WAITING_FOR_PROMO_USES = 8
+WAITING_FOR_CUSTOM_DEPOSIT = 9
+WAITING_FOR_ADMIN_USER_ID = 10
+WAITING_FOR_ADMIN_AMOUNT = 11
+WAITING_FOR_ADMIN_PROMO_NAME = 12
+WAITING_FOR_ADMIN_PROMO_AMOUNT = 13
+WAITING_FOR_ADMIN_PROMO_USES = 14
+WAITING_FOR_ADMIN_BAN_REASON = 15
+WAITING_FOR_ADMIN_MAILING = 16
+WAITING_FOR_ADMIN_MAILING_TEXT = 17
+WAITING_FOR_ADMIN_BALANCE_CHECK = 18
+WAITING_FOR_ADMIN_BALANCE_REMOVE = 19
+WAITING_FOR_SIM_OPERATOR = 20
+WAITING_FOR_DAILY_BONUS = 21
+
+# УНИКАЛЬНЫЕ СОСТОЯНИЯ ДЛЯ МАРКЕТА (чтобы не пересекаться с промокодами)
+MARKET_TITLE = 100
+MARKET_DESC = 101
+MARKET_PRICE = 102
+MARKET_CATEGORY = 103
+MARKET_PAYMENT = 104
 
 # Токен и канал из переменных окружения
 TOKEN = os.getenv("BOT_TOKEN")
@@ -820,14 +822,11 @@ async def cancel_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ]])
         )
     
-    # Очищаем только временные данные пользователя
-    context.user_data.pop("current_order", None)
-    context.user_data.pop("awaiting_captcha", None)
-    context.user_data.pop("market_temp", None)
-    context.user_data.pop("commission_item", None)
-    context.user_data.pop("buy_item", None)
-    context.user_data.pop("buy_invoice", None)
-    context.user_data.pop("sim_temp", None)
+    # Очищаем все временные данные
+    keys_to_clear = ["current_order", "awaiting_captcha", "market_temp", "commission_item", 
+                     "buy_item", "buy_invoice", "sim_temp"]
+    for key in keys_to_clear:
+        context.user_data.pop(key, None)
     
     return ConversationHandler.END
 
@@ -1420,11 +1419,9 @@ async def handle_sim_seed(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 order["seed"] = seed_text
                 break
     
-    context.user_data.pop("current_order", None)
-    context.user_data.pop("sim_temp", None)
-    context.user_data.pop("sim_quantity", None)
-    context.user_data.pop("sim_operator", None)
-    context.user_data.pop("clicker_reward", None)
+    keys_to_clear = ["current_order", "sim_temp", "sim_quantity", "sim_operator", "clicker_reward"]
+    for key in keys_to_clear:
+        context.user_data.pop(key, None)
     
     await show_main_menu(update, context)
     return ConversationHandler.END
@@ -2305,33 +2302,17 @@ async def check_case_payment(update: Update, context: ContextTypes.DEFAULT_TYPE)
     await message.edit_text(final_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
 
 # ============================================
-# МАРКЕТПЛЕЙС (ИСПРАВЛЕННАЯ ВЕРСИЯ)
+# МАРКЕТПЛЕЙС (ПОЛНОСТЬЮ ПЕРЕПИСАННЫЙ)
 # ============================================
-
-async def force_end_conversation(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Принудительно завершает диалог и возвращает в маркетплейс"""
-    if update.callback_query:
-        await update.callback_query.answer()
-    
-    # Очищаем временные данные
-    context.user_data.pop("market_temp", None)
-    context.user_data.pop("commission_item", None)
-    context.user_data.pop("buy_item", None)
-    context.user_data.pop("buy_invoice", None)
-    
-    # Возвращаемся в маркетплейс
-    await marketplace(update, context)
-    return ConversationHandler.END
 
 async def marketplace(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     
-    # Очищаем временные данные при входе
-    context.user_data.pop("market_temp", None)
-    context.user_data.pop("commission_item", None)
-    context.user_data.pop("buy_item", None)
-    context.user_data.pop("buy_invoice", None)
+    # Очищаем все маркет-данные при входе
+    market_keys = ["market_temp", "commission_item", "buy_item", "buy_invoice"]
+    for key in market_keys:
+        context.user_data.pop(key, None)
     
     if 'market_items' not in context.bot_data:
         context.bot_data['market_items'] = {}
@@ -2764,7 +2745,7 @@ async def market_sell(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ]]),
         parse_mode='Markdown'
     )
-    return WAITING_FOR_MARKET_TITLE
+    return MARKET_TITLE
 
 async def market_cancel_sell(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Отмена продажи - принудительный выход"""
@@ -2775,7 +2756,7 @@ async def market_cancel_sell(update: Update, context: ContextTypes.DEFAULT_TYPE)
     context.user_data.pop("market_temp", None)
     context.user_data.pop("commission_item", None)
     
-    # Принудительно завершаем диалог
+    # Возвращаемся в маркетплейс
     await marketplace(update, context)
     return ConversationHandler.END
 
@@ -2784,7 +2765,7 @@ async def market_title(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     if len(title) > 50:
         await update.message.reply_text("❌ Слишком длинное! Макс 50 символов. Попробуй снова:")
-        return WAITING_FOR_MARKET_TITLE
+        return MARKET_TITLE
     
     context.user_data['market_temp'] = {'title': title}
     
@@ -2802,14 +2783,14 @@ async def market_title(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ]]),
         parse_mode='Markdown'
     )
-    return WAITING_FOR_MARKET_DESC
+    return MARKET_DESC
 
 async def market_desc(update: Update, context: ContextTypes.DEFAULT_TYPE):
     desc = update.message.text.strip()
     
     if len(desc) > 200:
         await update.message.reply_text("❌ Слишком длинное! Макс 200 символов. Попробуй снова:")
-        return WAITING_FOR_MARKET_DESC
+        return MARKET_DESC
     
     context.user_data['market_temp']['desc'] = desc
     
@@ -2827,7 +2808,7 @@ async def market_desc(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ]]),
         parse_mode='Markdown'
     )
-    return WAITING_FOR_MARKET_PRICE
+    return MARKET_PRICE
 
 async def market_price(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
@@ -2836,7 +2817,7 @@ async def market_price(update: Update, context: ContextTypes.DEFAULT_TYPE):
             raise ValueError
     except:
         await update.message.reply_text("❌ Неверная цена. Введите число от 0.01 до 10000:")
-        return WAITING_FOR_MARKET_PRICE
+        return MARKET_PRICE
     
     context.user_data['market_temp']['price'] = price
     
@@ -2860,7 +2841,7 @@ async def market_price(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=InlineKeyboardMarkup(keyboard),
         parse_mode='Markdown'
     )
-    return WAITING_FOR_MARKET_CATEGORY
+    return MARKET_CATEGORY
 
 async def market_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -2900,7 +2881,7 @@ async def market_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
     
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
-    return WAITING_FOR_MARKET_PAYMENT
+    return MARKET_PAYMENT
 
 async def market_pay_commission_balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -2909,14 +2890,14 @@ async def market_pay_commission_balance(update: Update, context: ContextTypes.DE
     commission_data = context.user_data.get('commission_item')
     if not commission_data:
         await query.answer("❌ Ошибка, начни заново", show_alert=True)
-        return await force_end_conversation(update, context)
+        return ConversationHandler.END
     
     commission = commission_data['commission']
     balance = context.user_data.get('balance', 0)
     
     if balance < commission:
         await query.answer(f"❌ Недостаточно средств на балансе! Нужно {commission:.2f}$", show_alert=True)
-        return WAITING_FOR_MARKET_PAYMENT
+        return MARKET_PAYMENT
     
     context.user_data['balance'] = balance - commission
     
@@ -2968,7 +2949,7 @@ async def market_pay_commission_crypto(update: Update, context: ContextTypes.DEF
     commission_data = context.user_data.get('commission_item')
     if not commission_data:
         await query.answer("❌ Ошибка, начни заново", show_alert=True)
-        return await force_end_conversation(update, context)
+        return ConversationHandler.END
     
     commission = commission_data['commission']
     user_id = query.from_user.id
@@ -2982,7 +2963,7 @@ async def market_pay_commission_crypto(update: Update, context: ContextTypes.DEF
                 InlineKeyboardButton("◀️ Назад", callback_data="market_cancel_sell")
             ]])
         )
-        return WAITING_FOR_MARKET_PAYMENT
+        return MARKET_PAYMENT
     
     invoice_id = invoice.get('invoice_id')
     pay_url = invoice.get('pay_url')
@@ -3012,7 +2993,7 @@ async def market_pay_commission_crypto(update: Update, context: ContextTypes.DEF
     ]
     
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
-    return WAITING_FOR_MARKET_PAYMENT
+    return MARKET_PAYMENT
 
 async def check_market_commission(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -3022,19 +3003,19 @@ async def check_market_commission(update: Update, context: ContextTypes.DEFAULT_
     
     if 'pending_invoices' not in context.bot_data or invoice_id not in context.bot_data['pending_invoices']:
         await query.answer("❌ Счет не найден", show_alert=True)
-        return WAITING_FOR_MARKET_PAYMENT
+        return MARKET_PAYMENT
     
     invoice_data = context.bot_data['pending_invoices'][invoice_id]
     
     if invoice_data['user_id'] != query.from_user.id:
         await query.answer("❌ Это не ваш счет", show_alert=True)
-        return WAITING_FOR_MARKET_PAYMENT
+        return MARKET_PAYMENT
     
     paid = await check_crypto_payment(invoice_id)
     
     if not paid:
         await query.answer("❌ Оплата не найдена", show_alert=True)
-        return WAITING_FOR_MARKET_PAYMENT
+        return MARKET_PAYMENT
     
     commission_data = invoice_data['commission_data']
     market_temp = commission_data['market_temp']
@@ -3830,11 +3811,11 @@ def main():
     market_sell_handler = ConversationHandler(
         entry_points=[CallbackQueryHandler(market_sell, pattern="^market_sell$")],
         states={
-            WAITING_FOR_MARKET_TITLE: [MessageHandler(filters.TEXT & ~filters.COMMAND, market_title)],
-            WAITING_FOR_MARKET_DESC: [MessageHandler(filters.TEXT & ~filters.COMMAND, market_desc)],
-            WAITING_FOR_MARKET_PRICE: [MessageHandler(filters.TEXT & ~filters.COMMAND, market_price)],
-            WAITING_FOR_MARKET_CATEGORY: [CallbackQueryHandler(market_category, pattern="^market_cat_")],
-            WAITING_FOR_MARKET_PAYMENT: [
+            MARKET_TITLE: [MessageHandler(filters.TEXT & ~filters.COMMAND, market_title)],
+            MARKET_DESC: [MessageHandler(filters.TEXT & ~filters.COMMAND, market_desc)],
+            MARKET_PRICE: [MessageHandler(filters.TEXT & ~filters.COMMAND, market_price)],
+            MARKET_CATEGORY: [CallbackQueryHandler(market_category, pattern="^market_cat_")],
+            MARKET_PAYMENT: [
                 CallbackQueryHandler(market_pay_commission_balance, pattern="^market_pay_commission_balance$"),
                 CallbackQueryHandler(market_pay_commission_crypto, pattern="^market_pay_commission_crypto$"),
                 CallbackQueryHandler(check_market_commission, pattern="^check_market_commission_")

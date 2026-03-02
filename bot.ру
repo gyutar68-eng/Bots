@@ -41,7 +41,7 @@ WAITING_FOR_ADMIN_BALANCE_REMOVE = 19
 WAITING_FOR_SIM_OPERATOR = 20
 WAITING_FOR_DAILY_BONUS = 21
 
-# УНИКАЛЬНЫЕ СОСТОЯНИЯ ДЛЯ МАРКЕТА (чтобы не пересекаться с промокодами)
+# УНИКАЛЬНЫЕ СОСТОЯНИЯ ДЛЯ МАРКЕТА (от 100 чтобы не пересекаться)
 MARKET_TITLE = 100
 MARKET_DESC = 101
 MARKET_PRICE = 102
@@ -824,7 +824,7 @@ async def cancel_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     # Очищаем все временные данные
     keys_to_clear = ["current_order", "awaiting_captcha", "market_temp", "commission_item", 
-                     "buy_item", "buy_invoice", "sim_temp"]
+                     "buy_item", "buy_invoice", "sim_temp", "awaiting_promo"]
     for key in keys_to_clear:
         context.user_data.pop(key, None)
     
@@ -3061,6 +3061,68 @@ async def check_market_commission(update: Update, context: ContextTypes.DEFAULT_
     return ConversationHandler.END
 
 # ============================================
+# ПРОМОКОДЫ (ИСПРАВЛЕННЫЕ - РАБОТАЮТ ТОЛЬКО ПО ФЛАГУ)
+# ============================================
+async def activate_promo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    # Устанавливаем флаг, что мы ждем промокод
+    context.user_data['awaiting_promo'] = True
+    
+    await query.edit_message_text(
+        "🎫 **АКТИВАЦИЯ ПРОМОКОДА**\n\nВведите код:",
+        reply_markup=InlineKeyboardMarkup([[
+            InlineKeyboardButton("❌ Отмена", callback_data="profile_menu")
+        ]]),
+        parse_mode='Markdown'
+    )
+    return WAITING_FOR_PROMO_NAME
+
+async def process_promo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    
+    # ПРОВЕРЯЕМ ФЛАГ - если нет флага, значит это не активация промокода
+    if not context.user_data.get('awaiting_promo', False):
+        return ConversationHandler.END  # Просто игнорируем сообщение
+    
+    promo_name = update.message.text.strip().upper()
+    
+    # Снимаем флаг
+    context.user_data.pop('awaiting_promo', None)
+    
+    promo_codes = context.bot_data.get('promo_codes', {})
+    
+    if promo_name in promo_codes:
+        promo = promo_codes[promo_name]
+        
+        if promo['uses_left'] <= 0:
+            await update.message.reply_text("❌ Промокод уже использован!")
+        elif user_id in promo['activated_by']:
+            await update.message.reply_text("❌ Вы уже активировали этот промокод!")
+        else:
+            promo['uses_left'] -= 1
+            promo['activated_by'].append(user_id)
+            
+            context.user_data['balance'] = context.user_data.get('balance', 0) + promo['amount']
+            
+            await update.message.reply_text(
+                f"✅ **ПРОМОКОД АКТИВИРОВАН!**\n"
+                f"💰 Начислено: {promo['amount']}$\n"
+                f"💵 Текущий баланс: {context.user_data['balance']}$"
+            )
+    else:
+        await update.message.reply_text("❌ Промокод не найден!")
+    
+    fake_query = type('obj', (object,), {
+        'from_user': type('obj', (object,), {'id': user_id}),
+        'message': update.message,
+        'answer': lambda: None
+    })
+    await profile_menu(Update(update.update_id, callback_query=fake_query), context)
+    return ConversationHandler.END
+
+# ============================================
 # ПРОВЕРКА ПОДПИСКИ
 # ============================================
 async def check_subscription(user_id, context):
@@ -3406,54 +3468,6 @@ async def check_deposit(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ]]),
         parse_mode='Markdown'
     )
-
-async def activate_promo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    
-    await query.edit_message_text(
-        "🎫 **АКТИВАЦИЯ ПРОМОКОДА**\n\nВведите код:",
-        reply_markup=InlineKeyboardMarkup([[
-            InlineKeyboardButton("❌ Отмена", callback_data="profile_menu")
-        ]]),
-        parse_mode='Markdown'
-    )
-    return WAITING_FOR_PROMO_NAME
-
-async def process_promo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    promo_name = update.message.text.strip().upper()
-    
-    promo_codes = context.bot_data.get('promo_codes', {})
-    
-    if promo_name in promo_codes:
-        promo = promo_codes[promo_name]
-        
-        if promo['uses_left'] <= 0:
-            await update.message.reply_text("❌ Промокод уже использован!")
-        elif user_id in promo['activated_by']:
-            await update.message.reply_text("❌ Вы уже активировали этот промокод!")
-        else:
-            promo['uses_left'] -= 1
-            promo['activated_by'].append(user_id)
-            
-            context.user_data['balance'] = context.user_data.get('balance', 0) + promo['amount']
-            
-            await update.message.reply_text(
-                f"✅ **ПРОМОКОД АКТИВИРОВАН!**\n"
-                f"💰 Начислено: {promo['amount']}$\n"
-                f"💵 Текущий баланс: {context.user_data['balance']}$"
-            )
-    else:
-        await update.message.reply_text("❌ Промокод не найден!")
-    
-    fake_query = type('obj', (object,), {
-        'from_user': type('obj', (object,), {'id': user_id}),
-        'message': update.message,
-        'answer': lambda: None
-    })
-    await profile_menu(Update(update.update_id, callback_query=fake_query), context)
-    return ConversationHandler.END
 
 # ============================================
 # АДМИН-ПАНЕЛЬ
